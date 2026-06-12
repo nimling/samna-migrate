@@ -1,4 +1,4 @@
-FROM golang:1.24-alpine AS smig-build
+FROM golang:1.25-alpine AS smig-build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -28,6 +28,6 @@ RUN apk add --no-cache yq
 COPY database/smig/ /database/
 COPY --from=smig-build /smig /usr/local/bin/smig
 
-RUN printf '#!/bin/sh\nset -e\nsmig upgrade --yes --schema=/database/migrate.yml --db-dir=/database\nsmig up --schema=/database/migrate.yml --db-dir=/database\n' \
+RUN printf '#!/bin/sh\nset -e\nexport PGHOST=/var/run/postgresql\nsmig upgrade --yes --schema=/database/migrate.yml --db-dir=/database\nsmig up --schema=/database/migrate.yml --db-dir=/database\n' \
     > /docker-entrypoint-initdb.d/migrate.sh \
  && chmod +x /docker-entrypoint-initdb.d/migrate.sh

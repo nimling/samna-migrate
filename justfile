@@ -53,6 +53,7 @@ build-db-shell:
     @echo "Starting {{DB_SHELL_NAME}} on port {{DB_SHELL_PORT}}..."
     @docker run -d --name {{DB_SHELL_NAME}} \
         -p {{DB_SHELL_PORT}}:5432 \
+        -e SAUTH_APP_SLUG=bookable \
         -v {{DB_SHELL_NAME}}-data:/var/lib/postgresql/data \
         {{DB_SHELL_IMAGE}}
     @echo "Waiting for {{DB_SHELL_NAME}} migrations to finish..."
@@ -74,6 +75,7 @@ build-db-smig:
     @echo "Starting {{DB_SMIG_NAME}} on port {{DB_SMIG_PORT}}..."
     @docker run -d --name {{DB_SMIG_NAME}} \
         -p {{DB_SMIG_PORT}}:5432 \
+        -e SAUTH_APP_SLUG=bookable \
         -v {{DB_SMIG_NAME}}-data:/var/lib/postgresql/data \
         {{DB_SMIG_IMAGE}}
     @echo "Waiting for {{DB_SMIG_NAME}} migrations to finish..."

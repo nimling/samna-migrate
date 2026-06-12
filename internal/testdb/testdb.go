@@ -4,6 +4,7 @@ package testdb
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"testing"
 
@@ -14,8 +15,9 @@ import (
 // Open returns a connected DB against the test postgres. Defaults match
 // the bookable image (PGPORT=5435 host=localhost user=bookable password=bookable
 // dbname=bookable). Overrides via env are respected.
-// Cleanup drops samna_migrate so the next test starts fresh while leaving the
-// bookable public schema intact.
+// Cleanup drops samna_migrate and every smig_ prefixed fixture table so the
+// next test or rerun starts fresh while leaving the bookable public schema
+// intact. Test fixtures that create tables must use the smig_ prefix.
 func Open(t *testing.T) *db.DB {
 	t.Helper()
 	if v := os.Getenv("PGHOST"); v == "" {
@@ -41,19 +43,37 @@ func Open(t *testing.T) *db.DB {
 	if err != nil {
 		t.Fatalf("test postgres not reachable on %s:%s, run just build-db-shell first: %v", cfg.PGHost, cfg.PGPort, err)
 	}
+	dropState(context.Background(), d)
 	t.Cleanup(func() {
-		ctx := context.Background()
-		d.Pool.Exec(ctx, `DROP SCHEMA IF EXISTS samna_migrate CASCADE`)
+		dropState(context.Background(), d)
 		d.Close()
 	})
 	return d
 }
 
-// Reset drops samna_migrate and recreates the base singleton without invoking
+// Reset drops samna_migrate and the smig_ fixture tables without invoking
 // the upgrade chain. Useful between subtests.
 func Reset(t *testing.T, d *db.DB) {
 	t.Helper()
-	ctx := context.Background()
+	dropState(context.Background(), d)
+}
+
+func dropState(ctx context.Context, d *db.DB) {
+	rows, err := d.Pool.Query(ctx,
+		`SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'smig\_%'`)
+	if err == nil {
+		names := []string{}
+		for rows.Next() {
+			var n string
+			if rows.Scan(&n) == nil {
+				names = append(names, n)
+			}
+		}
+		rows.Close()
+		for _, n := range names {
+			d.Pool.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS public.%q CASCADE`, n))
+		}
+	}
 	d.Pool.Exec(ctx, `DROP SCHEMA IF EXISTS samna_migrate CASCADE`)
 }
 
