@@ -1,0 +1,71 @@
+name: Bookable Server
+description: Database migrations for the bookable scheduling platform
+version: "1.0"
+
+steps:
+  - name: Claimius Schema
+    type: base
+    slug: claimius
+    schemas: [claimius]
+    include:
+      - path: claimius/
+        fallback: /database/claimius/
+
+  - name: Application Tables
+    type: base
+    slug: base
+    schemas: [public]
+    include:
+      - path: base/
+        fallback: /database/base/
+
+  - name: System
+    type: base
+    slug: system
+    schemas: [public]
+    vars:
+      app_slug: $SAUTH_APP_SLUG
+    include:
+      - path: system/
+        fallback: /database/system/
+
+  - name: Migrations
+    type: migration
+    slug: migration
+    schemas: [public, claimius]
+    include:
+      - path: migrations/
+        fallback: /database/migrations/
+
+  - name: Debug User Seed Data
+    type: seed
+    slug: debug_user
+    schemas: [public, claimius]
+    if: '[ -n "$SAUTH_DEBUG_USER_ID" ]'
+    vars:
+      sauth_debug_user_id: $SAUTH_DEBUG_USER_ID
+      sauth_app_slug: $SAUTH_APP_SLUG
+      sauth_debug_private_key: bookable-debug-disciple-private-key-not-used-for-disciple-crypto
+      sauth_debug_private_seed: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      sauth_debug_client_secret: ""
+    include:
+      - path: debug_user/
+        fallback: /database/debug_user/
+
+  - name: Debug Clients Seed Data
+    type: seed
+    slug: debug_clients
+    schemas: [public, claimius]
+    if: '[ -n "$SAUTH_DEBUG_CLIENTS" ]'
+    vars:
+      sauth_app_slug: $SAUTH_APP_SLUG
+      sauth_debug_private_key: bookable-debug-disciple-private-key-not-used-for-disciple-crypto
+      sauth_debug_private_seed: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      sauth_debug_clients_b64: $(printf %s "$SAUTH_DEBUG_CLIENTS" | base64 | tr -d '\n')
+    include:
+      - path: debug_seeded/
+        fallback: /database/debug_seeded/
+      - path: debug_thon/
+        fallback: /database/debug_thon/
+      - path: debug_test/
+        fallback: /database/debug_test/

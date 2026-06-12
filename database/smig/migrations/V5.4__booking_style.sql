@@ -1,0 +1,2 @@
+ALTER TABLE booking
+    ADD COLUMN IF NOT EXISTS style JSONB;

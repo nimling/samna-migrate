@@ -1,0 +1,22 @@
+SELECT claimius.init_claimius_tables(
+    'public.bookable',
+    'public.bookable_type',
+    'public.booking',
+    'public.checkin',
+    'public.timeslot',
+    'public.object_timeslot',
+    'public.asset',
+    'public.object_asset',
+    'public.code',
+    'public.capability',
+    'public.object_capability',
+    'public.action',
+    'public.action_object',
+    'public.ai_request',
+    'public.feedback',
+    'public.activity',
+    'public.event_webhook',
+    'public.event_func',
+    'public.payment',
+    'public.calendar_plan'
+);

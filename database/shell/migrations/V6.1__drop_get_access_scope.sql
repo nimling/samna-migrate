@@ -1,0 +1,1 @@
+DROP FUNCTION IF EXISTS claimius.get_access(UUID, UUID, TEXT, INTEGER);
