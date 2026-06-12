@@ -3,6 +3,8 @@ package preflight
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/nimling/samna-migrate/internal/db"
@@ -35,6 +37,10 @@ func Scan(ctx context.Context, d *db.DB, cfg *schema.YAMLSnapshot, stepsCfg *ste
 	onDisk := map[string]bool{}
 
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			log.Plain("  step %s skipped, if condition false", st.Name)
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err
@@ -115,6 +121,9 @@ func Scan(ctx context.Context, d *db.DB, cfg *schema.YAMLSnapshot, stepsCfg *ste
 			return nil, err
 		}
 		if onDisk[fp] {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(dbDir, fp)); err == nil {
 			continue
 		}
 		r.FilesMissing++

@@ -111,15 +111,19 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 		log.Header("verdict reapply: every base and seed file a second time")
 		reapplyClean := true
 		for _, st := range candStepsCfg.Steps {
-			if st.Type == "migration" {
+			if st.Type == "migration" || !st.Active() {
 				continue
+			}
+			vars, err := st.ExpandVars()
+			if err != nil {
+				return err
 			}
 			files, err := st.ResolveFiles(candidateDir)
 			if err != nil {
 				return err
 			}
 			for _, f := range files {
-				if err := cand.RunPsqlFile(ctx, f.AbsPath, st.Pre); err != nil {
+				if err := cand.RunPsqlFile(ctx, f.AbsPath, st.Pre, vars); err != nil {
 					reapplyClean = false
 					log.Err("reapply failed: %s: %v", f.Rel, err)
 				}

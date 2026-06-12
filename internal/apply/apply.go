@@ -61,10 +61,18 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 
 	start := time.Now()
 	preSQL := ""
-	if st != nil && st.Pre != "" {
-		preSQL = st.Pre
+	var vars map[string]string
+	if st != nil {
+		if st.Pre != "" {
+			preSQL = st.Pre
+		}
+		expanded, err := st.ExpandVars()
+		if err != nil {
+			return err
+		}
+		vars = expanded
 	}
-	runErr := d.RunPsqlFile(ctx, abs, preSQL)
+	runErr := d.RunPsqlFile(ctx, abs, preSQL, vars)
 	end := time.Now()
 	durMs := end.Sub(start).Milliseconds()
 

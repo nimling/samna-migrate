@@ -1,6 +1,8 @@
 package migrate
 
 import (
+	"os"
+
 	"github.com/nimling/samna-migrate/pkg/cli"
 	"github.com/spf13/cobra"
 )
@@ -12,6 +14,13 @@ var (
 	assumeYes bool
 	force     bool
 )
+
+func envDefault(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
 
 var rootCmd = &cobra.Command{
 	Use:     "smig",
@@ -25,8 +34,8 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", "./database/migrate.yml", "Path to migrate.yml")
-	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", "./database", "Path to database directory")
+	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", envDefault("MIGRATE_SCHEMA", "./database/migrate.yml"), "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
+	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", envDefault("DB_DIR", "./database"), "Path to database directory, defaults from DB_DIR")
 	rootCmd.PersistentFlags().StringVar(&envFile, "env", "", "Optional dotenv file to load")
 	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "Bypass interactive confirmation prompts")
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Bypass safety checks where supported")

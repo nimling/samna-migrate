@@ -3,6 +3,7 @@ package steps
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -175,4 +176,31 @@ func ParseFilename(name string) (version, slug, label string, ok bool) {
 	slug = tail[:under]
 	label = tail[under+1:]
 	return version, slug, label, true
+}
+
+// Active evaluates the step's if expression with sh. An empty expression
+// means the step always runs, mirroring eval_condition in migrate.sh.
+func (s *Step) Active() bool {
+	cond := strings.TrimSpace(s.If)
+	if cond == "" || cond == "null" {
+		return true
+	}
+	return exec.Command("sh", "-c", cond).Run() == nil
+}
+
+// ExpandVars resolves each vars value through sh so env references and
+// command substitutions behave exactly as eval echo does in migrate.sh.
+func (s *Step) ExpandVars() (map[string]string, error) {
+	if len(s.Vars) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]string, len(s.Vars))
+	for k, v := range s.Vars {
+		b, err := exec.Command("sh", "-c", `printf %s "`+v+`"`).Output()
+		if err != nil {
+			return nil, fmt.Errorf("expand var %s: %w", k, err)
+		}
+		out[k] = string(b)
+	}
+	return out, nil
 }

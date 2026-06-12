@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nimling/samna-migrate/internal/config"
@@ -34,8 +35,8 @@ func (db *DB) Close() {
 	db.Pool.Close()
 }
 
-func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string) error {
-	args := []string{"--quiet", "--set", "ON_ERROR_STOP=1"}
+func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars map[string]string) error {
+	args := []string{"--quiet", "--single-transaction", "--set", "ON_ERROR_STOP=1"}
 	if db.cfg.PGHost != "" {
 		args = append(args, "--host", db.cfg.PGHost)
 	}
@@ -43,6 +44,14 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string) error
 		args = append(args, "--port", db.cfg.PGPort)
 	}
 	args = append(args, "--username", db.cfg.PGUser, "--dbname", db.cfg.PGDatabase)
+	keys := make([]string, 0, len(vars))
+	for k := range vars {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		args = append(args, "-v", k+"="+vars[k])
+	}
 	if preSQL != "" {
 		args = append(args, "-c", preSQL)
 	}
