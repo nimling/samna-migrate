@@ -16,13 +16,13 @@ import (
 )
 
 // E2E targets a live bookable test database. The smig-managed image is brought
-// up via `just build-db-smig` on DB_SMIG_PORT (default 5434). The shell-managed
-// image is brought up via `just build-db-shell` on DB_SHELL_PORT (default 5433).
+// up via `just build-db-smig` on DB_SMIG_PORT (default 5436). The shell-managed
+// image is brought up via `just build-db-shell` on DB_SHELL_PORT (default 5435).
 // PGPORT may be overridden by the calling shell to select either.
 // Tests invoke the smig binary built by `just build` (bin/smig).
 
 func env() map[string]string {
-	port := envOr("PGPORT", "5434")
+	port := envOr("PGPORT", "5436")
 	return map[string]string{
 		"PGHOST":         envOr("PGHOST", "localhost"),
 		"PGPORT":         port,
@@ -42,7 +42,7 @@ func bin(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(b); err != nil {
-		t.Skipf("smig binary not built at %s (run `just build`)", b)
+		t.Fatalf("smig binary not built at %s (run `just build`)", b)
 	}
 	return b
 }
@@ -54,11 +54,11 @@ func dial(t *testing.T) *pgxpool.Pool {
 		" password=" + e["PGPASSWORD"] + " dbname=" + e["PGDATABASE"] + " sslmode=disable"
 	p, err := pgxpool.New(context.Background(), conn)
 	if err != nil {
-		t.Skipf("bookable test db not reachable on port %s: %v (run `just build-db-smig`)", e["PGPORT"], err)
+		t.Fatalf("bookable test db not reachable on port %s: %v (run `just build-db-smig`)", e["PGPORT"], err)
 	}
 	if err := p.Ping(context.Background()); err != nil {
 		p.Close()
-		t.Skipf("bookable test db ping failed: %v", err)
+		t.Fatalf("bookable test db ping failed: %v", err)
 	}
 	return p
 }

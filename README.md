@@ -47,9 +47,9 @@ just build     # produces bin/smig
 just install   # installs smig to $GOPATH/bin
 ```
 
-## Testing against a bookable_server clone
+## Testing against the vendored bookable snapshot
 
-The repo expects a sibling directory `../bookable_server_test/` containing a checkout of `bookable_server` at HEAD. The `test-db-up` recipe in `justfile` builds the bookable database image from that checkout and runs it on port `5433` so it does not collide with a normal dev cycle.
+The repo carries a full bookable database tree twice under `database/`: `database/shell/` is applied by its bash `migrate.sh` entrypoint, `database/smig/` by the smig binary itself. `just build-db-shell` runs the shell managed image on port `5435`, `just build-db-smig` the smig managed image on port `5436`, both clear of the bookable dev cycle ports. `just test-integration` and `just test-e2e` build the image they need, run the tagged suite, and tear down.
 
 ## Layout
 

@@ -7,11 +7,11 @@ LDFLAGS := "-ldflags \"-X github.com/nimling/samna-migrate/pkg/cli.Version=" + A
 
 DB_SHELL_IMAGE := "bookable-shell-db"
 DB_SHELL_NAME  := "bookable-shell-db"
-DB_SHELL_PORT  := "5433"
+DB_SHELL_PORT  := "5435"
 
 DB_SMIG_IMAGE  := "bookable-smig-db"
 DB_SMIG_NAME   := "bookable-smig-db"
-DB_SMIG_PORT   := "5434"
+DB_SMIG_PORT   := "5436"
 
 default:
     @just --list
@@ -55,7 +55,8 @@ build-db-shell:
         -p {{DB_SHELL_PORT}}:5432 \
         -v {{DB_SHELL_NAME}}-data:/var/lib/postgresql/data \
         {{DB_SHELL_IMAGE}}
-    @sleep 3
+    @echo "Waiting for {{DB_SHELL_NAME}} migrations to finish..."
+    @sh -c 'for i in $(seq 1 150); do docker exec {{DB_SHELL_NAME}} pg_isready -h 127.0.0.1 -U bookable > /dev/null 2>&1 && exit 0; sleep 2; done; echo "{{DB_SHELL_NAME}} not ready after 300s"; docker logs --tail 30 {{DB_SHELL_NAME}}; exit 1'
 
 # Build the smig test db image from database/smig and start it on DB_SMIG_PORT.
 # Multi-stage Dockerfile builds the smig binary from the migrate Go source.
@@ -75,7 +76,8 @@ build-db-smig:
         -p {{DB_SMIG_PORT}}:5432 \
         -v {{DB_SMIG_NAME}}-data:/var/lib/postgresql/data \
         {{DB_SMIG_IMAGE}}
-    @sleep 3
+    @echo "Waiting for {{DB_SMIG_NAME}} migrations to finish..."
+    @sh -c 'for i in $(seq 1 150); do docker exec {{DB_SMIG_NAME}} pg_isready -h 127.0.0.1 -U bookable > /dev/null 2>&1 && exit 0; sleep 2; done; echo "{{DB_SMIG_NAME}} not ready after 300s"; docker logs --tail 30 {{DB_SMIG_NAME}}; exit 1'
 
 # Build and run both test databases side by side.
 build-db: build-db-shell build-db-smig

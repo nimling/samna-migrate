@@ -12,7 +12,7 @@ import (
 )
 
 // Open returns a connected DB against the test postgres. Defaults match
-// the bookable image (PGPORT=5433 host=localhost user=bookable password=bookable
+// the bookable image (PGPORT=5435 host=localhost user=bookable password=bookable
 // dbname=bookable). Overrides via env are respected.
 // Cleanup drops samna_migrate so the next test starts fresh while leaving the
 // bookable public schema intact.
@@ -22,7 +22,7 @@ func Open(t *testing.T) *db.DB {
 		os.Setenv("PGHOST", "localhost")
 	}
 	if v := os.Getenv("PGPORT"); v == "" {
-		os.Setenv("PGPORT", "5433")
+		os.Setenv("PGPORT", "5435")
 	}
 	if v := os.Getenv("PGUSER"); v == "" {
 		os.Setenv("PGUSER", "bookable")
@@ -39,7 +39,7 @@ func Open(t *testing.T) *db.DB {
 	cfg := config.FromEnv()
 	d, err := db.Open(context.Background(), cfg)
 	if err != nil {
-		t.Skipf("test postgres not reachable: %v", err)
+		t.Fatalf("test postgres not reachable on %s:%s, run just build-db-shell first: %v", cfg.PGHost, cfg.PGPort, err)
 	}
 	t.Cleanup(func() {
 		ctx := context.Background()
