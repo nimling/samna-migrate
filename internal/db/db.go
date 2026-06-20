@@ -74,7 +74,11 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 	}
 	args = append(args, "-f", path)
 	cmd := exec.CommandContext(ctx, "psql", args...)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+db.cfg.PGPassword)
+	sslmode := db.cfg.PGSSLMode
+	if sslmode == "" {
+		sslmode = "prefer"
+	}
+	cmd.Env = append(os.Environ(), "PGPASSWORD="+db.cfg.PGPassword, "PGSSLMODE="+sslmode)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
