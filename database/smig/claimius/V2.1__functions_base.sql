@@ -92,7 +92,7 @@ CREATE OR REPLACE FUNCTION claimius.ensure_uuid_null(p UUID) RETURNS UUID
 SELECT NULLIF(p, '00000000-0000-0000-0000-000000000000'::uuid);
 $$;
 
-COMMENT ON FUNCTION claimius.ensure_uuid_null IS 'Returns NULL when input is NULL or the zero UUID; otherwise the UUID unchanged.';
+COMMENT ON FUNCTION claimius.ensure_uuid_null(p uuid) IS 'Returns NULL when input is NULL or the zero UUID; otherwise the UUID unchanged.';
 
 -- write_audit
 -- Inserts a row into claimius.audit. Used by audit triggers and by error
@@ -126,7 +126,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.write_audit IS 'Inserts a row into the audit log and returns it.';
+COMMENT ON FUNCTION claimius.write_audit(p_app_id uuid, p_operation text, p_type text, p_object_type text, p_object_id uuid, p_sa_owner_id uuid, p_sa_created_by uuid, p_message text) IS 'Inserts a row into the audit log and returns it.';
 
 -- in_replay_mode
 -- Returns true if claimius.replay_mode is set on this session. Used by
@@ -163,7 +163,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_subtree IS 'Returns (object_type, object_id) descendants under a start node in a tree, self-edge included.';
+COMMENT ON FUNCTION claimius.get_subtree(p_tree_type claimius.tree_type, p_root_id uuid, p_start_type text, p_start_id uuid) IS 'Returns (object_type, object_id) descendants under a start node in a tree, self-edge included.';
 
 -- _popcount
 -- Counts the number of bits set in an integer access mask. Used to rank

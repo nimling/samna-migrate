@@ -108,55 +108,45 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 			reportDiff(diff)
 		}
 
-		log.Header("verdict reapply: every base and seed file a second time")
-		reapplyClean := true
-		for _, st := range candStepsCfg.Steps {
-			if st.Type == "migration" || !st.Active() {
-				continue
-			}
-			vars, err := st.ExpandVars()
-			if err != nil {
-				return err
-			}
-			files, err := st.ResolveFiles(candidateDir)
-			if err != nil {
-				return err
-			}
-			for _, f := range files {
-				if err := cand.RunPsqlFile(ctx, f.AbsPath, st.Pre, vars); err != nil {
-					reapplyClean = false
-					log.Err("reapply failed: %s: %v", f.Rel, err)
-				}
-			}
+		log.Header("verdict determinism: second clean bootstrap matches the first")
+		cont2, cand2, err := startContainer(ctx, cfg, image)
+		if err != nil {
+			return err
 		}
-		if reapplyClean {
-			candInv2, err := Inventory(ctx, cand, schemas)
+		defer cand2.Close()
+		if !opts.Keep {
+			defer stopContainer(cont2.Name)
+		}
+		if err := bootstrapCandidate(ctx, cand2, cont2.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
+			log.Err("second bootstrap failed: %v", err)
+		} else {
+			cand2Inv, err := Inventory(ctx, cand2, schemas)
 			if err != nil {
 				return err
 			}
-			diff2 := CompareInventories(candInv, candInv2)
+			diff2 := CompareInventories(candInv, cand2Inv)
 			if diff2.Empty() {
-				verdicts.Reapply = true
-				log.Success("reapply clean and side effect free")
+				verdicts.Determinism = true
+				log.Success("determinism clean: two independent bootstraps match")
 			} else {
-				log.Err("reapply changed objects")
+				log.Err("two bootstraps of the same tree diverged")
 				reportDiff(diff2)
 			}
 		}
 	} else {
-		log.Warn("equality and reapply skipped, bootstrap failed")
+		log.Warn("equality and determinism skipped, bootstrap failed")
 	}
 
 	log.Header("verdicts")
 	logVerdict("bootstrap", verdicts.Bootstrap)
 	logVerdict("equality", verdicts.Equality)
-	logVerdict("reapply", verdicts.Reapply)
+	logVerdict("determinism", verdicts.Determinism)
 
 	if opts.Keep {
 		log.Plain("container kept: %s on port %d, candidate tree at %s", cont.Name, cont.Port, candidateDir)
 	}
 
-	allPassed := verdicts.Bootstrap && verdicts.Equality && verdicts.Reapply
+	allPassed := verdicts.Bootstrap && verdicts.Equality && verdicts.Determinism
 	if !allPassed {
 		return fmt.Errorf("verify failed")
 	}

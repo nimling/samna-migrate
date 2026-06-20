@@ -91,13 +91,13 @@ func Scan(ctx context.Context, d *db.DB, cfg *schema.YAMLSnapshot, stepsCfg *ste
 			r.FilesDrift++
 			if dbState == "applied" {
 				log.Plain("  %s drift, replaying base step file", f.Rel)
-				_, err = d.Pool.Exec(ctx, `
+				err = d.ExecUpgrade(ctx, `
 					UPDATE samna_migrate.file
 					SET sha256 = $1, size_bytes = $2, state = 'pending',
 					    state_changed_at = now(), updated_at = now()
 					WHERE file_path = $3`, disksha, size, f.Rel)
 			} else {
-				_, err = d.Pool.Exec(ctx, `
+				err = d.ExecUpgrade(ctx, `
 					UPDATE samna_migrate.file
 					SET sha256 = $1, size_bytes = $2, updated_at = now()
 					WHERE file_path = $3`, disksha, size, f.Rel)

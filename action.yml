@@ -1,0 +1,61 @@
+name: 'smig'
+description: 'Run samna-migrate (smig) database migrations: up, check, down, merge, verify, lock, rebaseline, upgrade, stat'
+author: 'nimtech'
+branding:
+  icon: 'database'
+  color: 'blue'
+inputs:
+  smig-version:
+    description: 'Pinned smig CLI version'
+    required: false
+    default: '0.0.0'
+  command:
+    description: 'smig command to run: up, check, down, upgrade, merge, verify, lock, rebaseline, stat'
+    required: true
+    default: 'up'
+  schema:
+    description: 'Path to migrate.yml'
+    required: false
+    default: './database/migrate.yml'
+  db-dir:
+    description: 'Path to the database directory'
+    required: false
+    default: './database'
+  env-file:
+    description: 'Optional dotenv file to load before running'
+    required: false
+  yes:
+    description: 'Bypass interactive confirmation prompts'
+    required: false
+    default: 'true'
+  force:
+    description: 'Bypass safety checks where the command supports it'
+    required: false
+    default: 'false'
+  args:
+    description: 'Extra raw arguments appended to the smig command'
+    required: false
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.25'
+    - name: Install smig
+      shell: bash
+      run: |
+        go install github.com/nimling/samna-migrate/cmd@v${{ inputs.smig-version }}
+        mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/smig"
+        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+    - name: Run smig ${{ inputs.command }}
+      shell: bash
+      run: |
+        ARGS="${{ inputs.command }}"
+        [ -n "${{ inputs.schema }}" ] && ARGS="$ARGS --schema=${{ inputs.schema }}"
+        [ -n "${{ inputs.db-dir }}" ] && ARGS="$ARGS --db-dir=${{ inputs.db-dir }}"
+        [ -n "${{ inputs.env-file }}" ] && ARGS="$ARGS --env=${{ inputs.env-file }}"
+        [ "${{ inputs.yes }}" == "true" ] && ARGS="$ARGS --yes"
+        [ "${{ inputs.force }}" == "true" ] && ARGS="$ARGS --force"
+        [ -n "${{ inputs.args }}" ] && ARGS="$ARGS ${{ inputs.args }}"
+        GOMODCACHE="$(go env GOMODCACHE)" smig $ARGS

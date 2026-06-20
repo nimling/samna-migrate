@@ -171,8 +171,10 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 					st.Name, st.Type, slug, ver, f.Name, f.Rel, sha, size)
 				rekeyed++
 			} else {
-				d.Pool.Exec(ctx, `UPDATE samna_migrate.file SET sha256 = $1, size_bytes = $2, updated_at = now() WHERE file_path = $3`,
-					sha, size, f.Rel)
+				if err := d.ExecUpgrade(ctx, `UPDATE samna_migrate.file SET sha256 = $1, size_bytes = $2, updated_at = now() WHERE file_path = $3`,
+					sha, size, f.Rel); err != nil {
+					log.Warn("rekey %s: %v", f.Rel, err)
+				}
 			}
 		}
 	}

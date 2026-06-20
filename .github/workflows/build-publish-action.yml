@@ -1,0 +1,123 @@
+name: Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            echo "Error: No version provided via input or git tag"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Determined version: $VERSION"
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Vet
+        run: go vet ./...
+      - name: Unit tests
+        run: go test ./...
+
+  build:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [linux, darwin, windows]
+        arch: [amd64, arm64]
+        exclude:
+          - os: windows
+            arch: arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+      - name: Build
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+        run: |
+          EXT=""
+          if [[ "${{ matrix.os }}" == "windows" ]]; then EXT=.exe; fi
+          mkdir -p dist
+          go build \
+            -ldflags "-X github.com/nimling/samna-migrate/pkg/cli.Version=${{ needs.version.outputs.version }}" \
+            -o "dist/smig-${{ matrix.os }}-${{ matrix.arch }}${EXT}" ./cmd
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: smig-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/smig-*
+
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Flatten release assets
+        run: |
+          cd dist
+          find . -type f -name 'smig-*' -exec mv {} . \; 2>/dev/null || true
+          find . -type d -mindepth 1 -exec rm -rf {} \; 2>/dev/null || true
+          ls -la
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.version.outputs.version }}
+          name: Release ${{ needs.version.outputs.version }}
+          files: dist/smig-*
+          body: |
+            ## smig ${{ needs.version.outputs.version }}
+
+            ### Go install
+            ```bash
+            go install github.com/nimling/samna-migrate/cmd@${{ needs.version.outputs.version }}
+            ```
+
+            ### GitHub Action
+            ```yaml
+            - uses: nimling/samna-migrate@${{ needs.version.outputs.version }}
+              with:
+                command: up
+                schema: ./database/migrate.yml
+                db-dir: ./database
+            ```
+
+            ### Full Changelog
+            https://github.com/${{ github.repository }}/commits/${{ needs.version.outputs.version }}
+          draft: false
+          prerelease: false

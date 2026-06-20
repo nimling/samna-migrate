@@ -48,6 +48,32 @@ func materializeCandidate(stepsCfg *steps.Config, stepsFile, dbDir, upgradedDir 
 			}
 		}
 	}
+
+	// Copy files the merge created that have no source counterpart, the new
+	// concept and deferred default files, into their folder under the
+	// candidate. The dropped review folder and migration placeholders stay out.
+	err = filepath.Walk(upgradedDir, func(p string, info os.FileInfo, werr error) error {
+		if werr != nil || info.IsDir() || filepath.Ext(p) != ".sql" || info.Size() == 0 {
+			return werr
+		}
+		rel, _ := filepath.Rel(upgradedDir, p)
+		top := rel[:len(rel)-len(filepath.Base(rel))]
+		if top == "migrations/" || top == "dropped/" {
+			return nil
+		}
+		dest := filepath.Join(candidateDir, rel)
+		if _, err := os.Stat(dest); err == nil {
+			return nil
+		}
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+			return err
+		}
+		return copyFile(p, dest)
+	})
+	if err != nil {
+		os.RemoveAll(candidateDir)
+		return "", "", err
+	}
 	return candidateDir, filepath.Join(candidateDir, stepsName), nil
 }
 

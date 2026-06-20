@@ -35,6 +35,22 @@ func (db *DB) Close() {
 	db.Pool.Close()
 }
 
+func (db *DB) ExecUpgrade(ctx context.Context, sql string, args ...any) error {
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SET LOCAL samna_migrate.upgrade_mode = 'true'`); err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+	if _, err := tx.Exec(ctx, sql, args...); err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars map[string]string) error {
 	args := []string{"--quiet", "--single-transaction", "--set", "ON_ERROR_STOP=1"}
 	if db.cfg.PGHost != "" {
@@ -52,6 +68,7 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 	for _, k := range keys {
 		args = append(args, "-v", k+"="+vars[k])
 	}
+	args = append(args, "-c", "SET check_function_bodies = false")
 	if preSQL != "" {
 		args = append(args, "-c", preSQL)
 	}

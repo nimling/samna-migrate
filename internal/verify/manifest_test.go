@@ -43,7 +43,7 @@ func TestManifestRoundtrip(t *testing.T) {
 		ToolVersion:    "dev",
 		SourceDatabase: "bookable",
 		Image:          "postgres:17",
-		Verdicts:       Verdicts{Bootstrap: true, Equality: true, Reapply: false},
+		Verdicts:       Verdicts{Bootstrap: true, Equality: true, Determinism: false},
 	}
 	if err := WriteManifest(dir, m); err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestManifestRoundtrip(t *testing.T) {
 	if got.AllPassed() {
 		t.Errorf("AllPassed must be false when a verdict failed")
 	}
-	got.Verdicts.Reapply = true
+	got.Verdicts.Determinism = true
 	if !got.AllPassed() {
 		t.Errorf("AllPassed must be true when every verdict passed")
 	}

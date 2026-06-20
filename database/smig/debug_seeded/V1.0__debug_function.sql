@@ -141,7 +141,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION public.get_debug_context IS 'Idempotently bootstraps the debug identity (samna_app, organization, samna_user, samna_client, owner claim, owner user_claim) and returns the bootstrap user_claim id, app id, and org id. Reads the app slug and debug client secret from current_setting. samna_client is provisioned with the same UUID as the debug user so user_claim grants apply to both identities under the shared user_id space. Safe to call repeatedly with different p_user_id values; subsequent users share the same root debug organization and Owner claim.';
+COMMENT ON FUNCTION public.get_debug_context(p_user_id uuid) IS 'Idempotently bootstraps the debug identity (samna_app, organization, samna_user, samna_client, owner claim, owner user_claim) and returns the bootstrap user_claim id, app id, and org id. Reads the app slug and debug client secret from current_setting. samna_client is provisioned with the same UUID as the debug user so user_claim grants apply to both identities under the shared user_id space. Safe to call repeatedly with different p_user_id values; subsequent users share the same root debug organization and Owner claim.';
 
 DO $$
 DECLARE

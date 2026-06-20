@@ -13,9 +13,9 @@ import (
 const manifestName = "verify.json"
 
 type Verdicts struct {
-	Bootstrap bool `json:"bootstrap"`
-	Equality  bool `json:"equality"`
-	Reapply   bool `json:"reapply"`
+	Bootstrap   bool `json:"bootstrap"`
+	Equality    bool `json:"equality"`
+	Determinism bool `json:"determinism"`
 }
 
 type Manifest struct {
@@ -28,7 +28,7 @@ type Manifest struct {
 }
 
 func (m *Manifest) AllPassed() bool {
-	return m.Verdicts.Bootstrap && m.Verdicts.Equality && m.Verdicts.Reapply
+	return m.Verdicts.Bootstrap && m.Verdicts.Equality && m.Verdicts.Determinism
 }
 
 func TreeSha(upgradedDir string) (string, error) {

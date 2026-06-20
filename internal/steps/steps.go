@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -73,6 +74,14 @@ type File struct {
 	Folder   string
 }
 
+func resolveIncludePath(dbDir, p string) string {
+	p = os.ExpandEnv(p)
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(filepath.Join(dbDir, p))
+}
+
 func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 	files := []File{}
 	seen := map[string]bool{}
@@ -81,13 +90,13 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 		excludes[filepath.Base(e.Path)] = true
 	}
 	for _, inc := range s.Include {
-		base := filepath.Clean(filepath.Join(dbDir, inc.Path))
+		base := resolveIncludePath(dbDir, inc.Path)
 		info, err := os.Stat(base)
 		if err != nil {
 			if inc.Fallback == "" {
 				continue
 			}
-			base = inc.Fallback
+			base = resolveIncludePath(dbDir, inc.Fallback)
 			info, err = os.Stat(base)
 			if err != nil {
 				continue
@@ -142,8 +151,56 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 			})
 		}
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].Name < files[j].Name })
+	sort.Slice(files, func(i, j int) bool {
+		vi, _, _, oki := ParseFilename(files[i].Name)
+		vj, _, _, okj := ParseFilename(files[j].Name)
+		if oki && okj {
+			if c := compareVersion(vi, vj); c != 0 {
+				return c < 0
+			}
+		}
+		return files[i].Name < files[j].Name
+	})
 	return files, nil
+}
+
+// compareVersion orders dotted numeric versions component by component, so
+// V1.2 precedes V1.10 and V5.0 precedes V10.0, where a plain string sort would
+// not. Non numeric components fall back to string comparison.
+func compareVersion(a, b string) int {
+	as := strings.Split(a, ".")
+	bs := strings.Split(b, ".")
+	n := len(as)
+	if len(bs) > n {
+		n = len(bs)
+	}
+	for i := 0; i < n; i++ {
+		var ai, bi string
+		if i < len(as) {
+			ai = as[i]
+		}
+		if i < len(bs) {
+			bi = bs[i]
+		}
+		an, aerr := strconv.Atoi(ai)
+		bn, berr := strconv.Atoi(bi)
+		if aerr == nil && berr == nil {
+			if an != bn {
+				if an < bn {
+					return -1
+				}
+				return 1
+			}
+			continue
+		}
+		if ai != bi {
+			if ai < bi {
+				return -1
+			}
+			return 1
+		}
+	}
+	return 0
 }
 
 func relOrName(dbDir, abs string) string {

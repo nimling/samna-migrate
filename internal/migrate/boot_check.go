@@ -7,12 +7,14 @@ import (
 
 	"github.com/nimling/samna-migrate/internal/db"
 	"github.com/nimling/samna-migrate/internal/hash"
+	"github.com/nimling/samna-migrate/internal/require"
 	"github.com/nimling/samna-migrate/internal/schema"
+	"github.com/nimling/samna-migrate/internal/steps"
 	"github.com/nimling/samna-migrate/pkg/cli"
 )
 
 // bootCheck verifies the db is exactly aligned with the script before any non-upgrade command proceeds.
-func bootCheck(ctx context.Context, d *db.DB, stepsFile, toolVersion string) error {
+func bootCheck(ctx context.Context, d *db.DB, stepsFile, dbDir, toolVersion string) error {
 	if err := schema.Ensure(ctx, d); err != nil {
 		return err
 	}
@@ -50,5 +52,9 @@ func bootCheck(ctx context.Context, d *db.DB, stepsFile, toolVersion string) err
 	if dbSha != diskSha {
 		return fmt.Errorf("migrate.yml drift. Run 'migrate upgrade' locally: db=%s disk=%s", dbSha[:12], diskSha[:12])
 	}
-	return nil
+	stepsCfg, err := steps.Load(stepsFile)
+	if err != nil {
+		return err
+	}
+	return require.Gate(ctx, d, stepsCfg, dbDir)
 }

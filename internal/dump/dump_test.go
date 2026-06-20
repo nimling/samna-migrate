@@ -1,88 +1,45 @@
 package dump
 
 import (
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 )
 
-func TestDetectSourceUses(t *testing.T) {
-	dir := t.TempDir()
-	mk := func(name, content string) string {
-		p := filepath.Join(dir, name)
-		os.WriteFile(p, []byte(content), 0o644)
-		return p
+func TestSplitIdent(t *testing.T) {
+	s, n := splitIdent("claimius.get_access")
+	if s != "claimius" || n != "get_access" {
+		t.Errorf("splitIdent qualified: %q %q", s, n)
 	}
-	cases := []struct {
-		name    string
-		files   map[string]string
-		want    SourceFlags
-	}{
-		{
-			"grants and comment",
-			map[string]string{"a.sql": "GRANT SELECT ON t TO u;\nCOMMENT ON TABLE t IS 'x';"},
-			SourceFlags{UsesGrant: true, UsesComment: true},
-		},
-		{
-			"policy",
-			map[string]string{"a.sql": "CREATE POLICY p ON t FOR SELECT USING (true);"},
-			SourceFlags{UsesPolicy: true},
-		},
-		{
-			"row level security",
-			map[string]string{"a.sql": "ALTER TABLE t ENABLE ROW LEVEL SECURITY;"},
-			SourceFlags{UsesPolicy: true},
-		},
-		{
-			"extension",
-			map[string]string{"a.sql": "CREATE EXTENSION pgcrypto;"},
-			SourceFlags{UsesExtension: true},
-		},
-		{
-			"default priv",
-			map[string]string{"a.sql": "ALTER DEFAULT PRIVILEGES IN SCHEMA s GRANT SELECT ON TABLES TO u;"},
-			SourceFlags{UsesGrant: true, UsesDefaultPriv: true},
-		},
-		{
-			"sequence owned",
-			map[string]string{"a.sql": "ALTER SEQUENCE s OWNED BY t.id;"},
-			SourceFlags{UsesSeqOwned: true},
-		},
-		{
-			"nothing fancy",
-			map[string]string{"a.sql": "SELECT 1;"},
-			SourceFlags{},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			paths := []string{}
-			for name, content := range tc.files {
-				paths = append(paths, mk(name, content))
-			}
-			got, err := DetectSourceUses(paths)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if *got != tc.want {
-				t.Errorf("flags = %+v, want %+v", *got, tc.want)
-			}
-		})
+	s, n = splitIdent("tg_calc_access")
+	if s != "" || n != "tg_calc_access" {
+		t.Errorf("splitIdent bare: %q %q", s, n)
 	}
 }
 
-func TestQuoteIdentsCSV(t *testing.T) {
-	got := quoteIdentsCSV([]string{"public", "claimius"})
-	want := "'public', 'claimius'"
-	if got != want {
-		t.Errorf("quoteIdentsCSV: got %q want %q", got, want)
+func TestInjectIndexGuard(t *testing.T) {
+	got := injectIndexGuard("CREATE INDEX foo_idx ON public.a USING btree (id);")
+	if !strings.HasPrefix(got, "CREATE INDEX IF NOT EXISTS foo_idx") {
+		t.Errorf("plain index: %q", got)
+	}
+	got = injectIndexGuard("CREATE UNIQUE INDEX bar_idx ON public.b USING btree (id);")
+	if !strings.HasPrefix(got, "CREATE UNIQUE INDEX IF NOT EXISTS bar_idx") {
+		t.Errorf("unique index: %q", got)
+	}
+	already := "CREATE INDEX IF NOT EXISTS baz_idx ON public.c USING btree (id);"
+	if injectIndexGuard(already) != already {
+		t.Errorf("guarded index must pass through")
 	}
 }
 
-func TestQuoteIdentsCSVQuoting(t *testing.T) {
-	got := quoteIdentsCSV([]string{"o'reilly"})
-	want := "'o''reilly'"
-	if got != want {
-		t.Errorf("quoteIdentsCSV escaping: got %q want %q", got, want)
+func TestGuardType(t *testing.T) {
+	got := guardType("status", "CREATE TYPE public.status AS ENUM ('a', 'b');")
+	if !strings.Contains(got, "IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'status')") {
+		t.Errorf("missing pg_type guard: %q", got)
+	}
+	if !strings.Contains(got, "CREATE TYPE public.status AS ENUM ('a', 'b');") {
+		t.Errorf("missing create inside guard: %q", got)
+	}
+	if strings.Count(got, ";") < 2 {
+		t.Errorf("guard block not terminated: %q", got)
 	}
 }

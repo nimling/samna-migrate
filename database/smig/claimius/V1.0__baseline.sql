@@ -685,7 +685,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_prophet_app IS 'Returns the system app row for this deployment (prophet or hybrid). Raises on pure disciple.';
+COMMENT ON FUNCTION claimius.get_prophet_app() IS 'Returns the system app row for this deployment (prophet or hybrid). Raises on pure disciple.';
 
 CREATE OR REPLACE FUNCTION claimius.get_disciple_app()
     RETURNS SETOF claimius.samna_app AS $$
@@ -706,21 +706,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_disciple_app IS 'Returns the upstream prophet app this disciple mirrors. Raises on pure prophet.';
+COMMENT ON FUNCTION claimius.get_disciple_app() IS 'Returns the upstream prophet app this disciple mirrors. Raises on pure prophet.';
 
 CREATE OR REPLACE FUNCTION claimius.get_prophet_app_id()
     RETURNS UUID AS $$
 SELECT id FROM claimius.get_prophet_app();
 $$ LANGUAGE sql STABLE;
 
-COMMENT ON FUNCTION claimius.get_prophet_app_id IS 'Scalar wrapper over get_prophet_app. Returns the system app id; raises on pure disciple.';
+COMMENT ON FUNCTION claimius.get_prophet_app_id() IS 'Scalar wrapper over get_prophet_app. Returns the system app id; raises on pure disciple.';
 
 CREATE OR REPLACE FUNCTION claimius.get_disciple_app_id()
     RETURNS UUID AS $$
 SELECT id FROM claimius.get_disciple_app();
 $$ LANGUAGE sql STABLE;
 
-COMMENT ON FUNCTION claimius.get_disciple_app_id IS 'Scalar wrapper over get_disciple_app. Returns the upstream prophet app id; raises on pure prophet.';
+COMMENT ON FUNCTION claimius.get_disciple_app_id() IS 'Scalar wrapper over get_disciple_app. Returns the upstream prophet app id; raises on pure prophet.';
 
 CREATE OR REPLACE FUNCTION claimius.get_app_id()
     RETURNS UUID AS $$
@@ -752,7 +752,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_app_id IS 'Returns the deployment own app id. Prophet/hybrid: system app. Pure disciple: upstream app.';
+COMMENT ON FUNCTION claimius.get_app_id() IS 'Returns the deployment own app id. Prophet/hybrid: system app. Pure disciple: upstream app.';
 
 -- ----------------------------------------------------------------------------
 -- 8. Audit

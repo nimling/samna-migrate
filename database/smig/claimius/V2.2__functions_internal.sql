@@ -659,7 +659,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._build_grants_for_object IS 'Computes grants jsonb for a (user, object) pair, with bitwise deny subtraction.';
+COMMENT ON FUNCTION claimius._build_grants_for_object(p_user_id uuid, p_app_id uuid, p_object_type text, p_object_id uuid) IS 'Computes grants jsonb for a (user, object) pair, with bitwise deny subtraction.';
 
 -- _apply_denies
 -- Subtracts deny bits from each grant on the same path. Returns a new
@@ -706,7 +706,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql IMMUTABLE;
 
-COMMENT ON FUNCTION claimius._apply_denies IS 'Subtracts deny bits from grants on matching paths. Drops grants whose mask becomes 0.';
+COMMENT ON FUNCTION claimius._apply_denies(p_grants jsonb, p_denies jsonb, p_object_type text, p_object_id uuid) IS 'Subtracts deny bits from grants on matching paths. Drops grants whose mask becomes 0.';
 
 -- _direct_grant_for_object
 -- Determines whether the given user holds direct grant on the given object
@@ -797,7 +797,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._direct_grant_for_object IS 'Determines if user has direct (creator) grant, accounting for owner bit denies.';
+COMMENT ON FUNCTION claimius._direct_grant_for_object(p_user_id uuid, p_app_id uuid, p_object_type text, p_object_id uuid) IS 'Determines if user has direct (creator) grant, accounting for owner bit denies.';
 
 -- _denormalize_object
 -- Reads the registered row's name, description, sa_owner_id, sa_location_id,
@@ -846,7 +846,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._denormalize_object IS 'Reads name/description/owner/location/root from a registered row.';
+COMMENT ON FUNCTION claimius._denormalize_object(p_object_type text, p_object_id uuid, OUT sa_name text, OUT sa_description text, OUT sa_link text, OUT sa_owner_id uuid, OUT sa_location_id uuid, OUT sa_root_id uuid) IS 'Reads name/description/owner/location/root from a registered row.';
 
 -- recompute_user_object
 -- The single function that recomputes the user_object row for one
@@ -961,7 +961,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.recompute_user_object IS 'Recomputes user_object plus companions for one (app, user, object) tuple.';
+COMMENT ON FUNCTION claimius.recompute_user_object(p_app_id uuid, p_user_id uuid, p_object_type text, p_object_id uuid) IS 'Recomputes user_object plus companions for one (app, user, object) tuple.';
 
 -- _refresh_user_users
 -- Recomputes user_users entries for one (app_id, viewer) pair from
@@ -994,7 +994,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._refresh_user_users IS 'Rebuilds user_users rows for one (app, viewer).';
+COMMENT ON FUNCTION claimius._refresh_user_users(p_app_id uuid, p_viewer_id uuid) IS 'Rebuilds user_users rows for one (app, viewer).';
 
 -- _affected_users_for_object
 -- Returns the list of users whose access to the given object could change.
@@ -1051,7 +1051,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius._affected_users_for_object IS 'Users whose access to the object could change.';
+COMMENT ON FUNCTION claimius._affected_users_for_object(p_app_id uuid, p_object_type text, p_object_id uuid) IS 'Users whose access to the object could change.';
 
 -- ============================================================================
 -- Ancestor walks
@@ -1080,7 +1080,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_owner_ancestors IS 'Ownership tree ancestors of an object, hop 0 = self.';
+COMMENT ON FUNCTION claimius.get_owner_ancestors(p_object_type text, p_object_id uuid) IS 'Ownership tree ancestors of an object, hop 0 = self.';
 
 -- get_location_ancestors
 -- Reads the location tree closure for location ancestors of an object, plus
@@ -1130,7 +1130,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_location_ancestors IS 'Location chain ancestors of an object plus each location''s owning org chain.';
+COMMENT ON FUNCTION claimius.get_location_ancestors(p_object_type text, p_object_id uuid) IS 'Location chain ancestors of an object plus each location''s owning org chain.';
 
 -- get_parenthood_ancestors
 -- Reads the parenthood tree closure for ancestors of an object whose table
@@ -1162,7 +1162,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_parenthood_ancestors IS 'Parenthood tree ancestors via sa_parent_id, hop 0 = self.';
+COMMENT ON FUNCTION claimius.get_parenthood_ancestors(p_object_type text, p_object_id uuid) IS 'Parenthood tree ancestors via sa_parent_id, hop 0 = self.';
 
 -- get_ancestors
 -- Combined ancestor walk. Yields rows from the owner, location, and
@@ -1187,4 +1187,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-COMMENT ON FUNCTION claimius.get_ancestors IS 'Combined ancestor walk across owner, location, and parenthood trees.';
+COMMENT ON FUNCTION claimius.get_ancestors(p_object_type text, p_object_id uuid) IS 'Combined ancestor walk across owner, location, and parenthood trees.';

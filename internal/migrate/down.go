@@ -67,7 +67,7 @@ Requires --anthropic-key or the ANTHROPIC_API_KEY env var. Refuses to run in CI.
 			return err
 		}
 		defer d.Close()
-		if err := bootCheck(ctx, d, stepsFile, cli.Version); err != nil {
+		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
 			return err
 		}
 

@@ -8,7 +8,7 @@ import (
 	"github.com/nimling/samna-migrate/internal/steps"
 )
 
-func TestIntroducedIdents(t *testing.T) {
+func TestFileStatementsSchemaObjects(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "v1.sql")
 	content := `
@@ -16,27 +16,60 @@ CREATE OR REPLACE FUNCTION public.foo() RETURNS void AS $$ BEGIN END $$ LANGUAGE
 CREATE TABLE IF NOT EXISTS public.bar (id INT);
 CREATE TYPE public.baz_status AS ENUM ('a','b');
 CREATE INDEX foo_idx ON public.bar(id);
-SELECT 1; -- this should not match
 `
 	os.WriteFile(p, []byte(content), 0o644)
-	got, err := introducedIdents(p)
+	got, nonSchema, err := fileStatements(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]bool{
-		"foo_idx":        true,
-		"public.bar":     true,
-		"public.baz_status": true,
-		"public.foo":     true,
+	if nonSchema {
+		t.Errorf("pure DDL file must not be flagged non-schema")
+	}
+	want := map[string]string{
+		"foo_idx":           "INDEX",
+		"public.bar":        "TABLE",
+		"public.baz_status": "TYPE",
+		"public.foo":        "FUNCTION",
 	}
 	for _, g := range got {
-		if !want[g] {
-			t.Errorf("unexpected ident: %q", g)
+		kind, ok := want[g.Name]
+		if !ok {
+			t.Errorf("unexpected ident: %q", g.Name)
+			continue
 		}
-		delete(want, g)
+		if g.Kind != kind {
+			t.Errorf("ident %q kind = %q, want %q", g.Name, g.Kind, kind)
+		}
+		delete(want, g.Name)
 	}
 	for k := range want {
 		t.Errorf("missing ident: %q", k)
+	}
+}
+
+func TestFileStatementsFlagsNonSchema(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "v2.sql")
+	content := `
+ALTER TABLE public.bar ADD COLUMN n INT;
+INSERT INTO public.bar (id) VALUES (1);
+`
+	os.WriteFile(p, []byte(content), 0o644)
+	got, nonSchema, err := fileStatements(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !nonSchema {
+		t.Errorf("INSERT must flag the file as carrying non-schema statements")
+	}
+	var found bool
+	for _, g := range got {
+		if g.Name == "public.bar" && g.Kind == "TABLE" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("ALTER TABLE target must still be captured: %v", got)
 	}
 }
 
@@ -61,10 +94,10 @@ func TestBuildIdentifierRegistry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reg["public.x"] == "" {
+	if reg["public.x"].Rel == "" {
 		t.Errorf("registry missing public.x: %v", reg)
 	}
-	if reg["public.y"] == "" {
+	if reg["public.y"].Rel == "" {
 		t.Errorf("registry missing public.y: %v", reg)
 	}
 }

@@ -26,8 +26,8 @@ func TestUpgradeChainEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v != 3 {
-		t.Errorf("schema_version after chain = %d, want 3", v)
+	if v != upgrade.TargetVersion {
+		t.Errorf("schema_version after chain = %d, want %d", v, upgrade.TargetVersion)
 	}
 
 	assertColumn := func(table, col string) {
@@ -64,7 +64,13 @@ func TestUpgradeChainEndToEnd(t *testing.T) {
 	assertColumn("down_proposal", "accepted_at")
 	assertColumn("down_proposal", "succeeded")
 
+	assertColumn("requirement", "kind")
+	assertColumn("requirement", "name")
+	assertColumn("requirement", "first_seen")
+	assertColumn("requirement", "last_seen")
+
 	assertConstraint(t, d, ctx, "file_state_check")
+	assertConstraint(t, d, ctx, "requirement_kind_name_key")
 	assertConstraint(t, d, ctx, "file_position_unique")
 	assertConstraint(t, d, ctx, "history_action_type_check")
 	assertConstraint(t, d, ctx, "history_success_no_error")

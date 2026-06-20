@@ -274,7 +274,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_objects IS 'Object ids and metadata for objects whose mask covers p_required_access. user_claim_id is the actor token from the strongest surviving claim grant; null when only direct_grant applies.';
+COMMENT ON FUNCTION claimius.get_objects(p_user_id uuid, p_app_id uuid, p_object_type text, p_required_access integer) IS 'Object ids and metadata for objects whose mask covers p_required_access. user_claim_id is the actor token from the strongest surviving claim grant; null when only direct_grant applies.';
 
 -- ----------------------------------------------------------------------------
 -- get_organizations
@@ -306,7 +306,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_organizations IS 'Organizations whose effective mask covers p_required_access.';
+COMMENT ON FUNCTION claimius.get_organizations(p_user_id uuid, p_app_id uuid, p_required_access integer) IS 'Organizations whose effective mask covers p_required_access.';
 
 -- ----------------------------------------------------------------------------
 -- get_locations
@@ -337,7 +337,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_locations IS 'Locations whose effective mask covers p_required_access.';
+COMMENT ON FUNCTION claimius.get_locations(p_user_id uuid, p_app_id uuid, p_required_access integer) IS 'Locations whose effective mask covers p_required_access.';
 
 -- ----------------------------------------------------------------------------
 -- get_users
@@ -379,7 +379,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_users IS 'Users the calling user can see in this app.';
+COMMENT ON FUNCTION claimius.get_users(p_user_id uuid, p_app_id uuid, p_required_access integer) IS 'Users the calling user can see in this app.';
 
 -- ----------------------------------------------------------------------------
 -- get_claims (overload: by user)
@@ -543,7 +543,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_audit IS 'Audit rows for organizations the user can see.';
+COMMENT ON FUNCTION claimius.get_audit(p_user_id uuid, p_app_id uuid, p_required_access integer, p_limit integer, p_offset integer) IS 'Audit rows for organizations the user can see.';
 
 -- ----------------------------------------------------------------------------
 -- get_secrets
@@ -574,7 +574,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.get_secrets IS 'Secrets whose effective mask covers p_required_access.';
+COMMENT ON FUNCTION claimius.get_secrets(p_user_id uuid, p_app_id uuid, p_required_access integer) IS 'Secrets whose effective mask covers p_required_access.';
 
 -- Drop any stale earlier signatures of the graph functions before redefining.
 -- The previous version of these functions had different argument lists; if a
@@ -1149,7 +1149,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._invalidate_claim_graph_cache IS 'Trigger function. Drops claim_graph_cache rows affected by writes to user_object, user_users, samna_user, claim, claim_object.';
+COMMENT ON FUNCTION claimius._invalidate_claim_graph_cache() IS 'Trigger function. Drops claim_graph_cache rows affected by writes to user_object, user_users, samna_user, claim, claim_object.';
 
 -- ----------------------------------------------------------------------------
 -- search
@@ -1269,7 +1269,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.create_claim IS 'Creates a new claim. p_sa_access is a bitwise mask: 0x01 owner, 0x02 write, 0x04 read, 0x08 execute, 0x10 deny.';
+COMMENT ON FUNCTION claimius.create_claim(p_app_id uuid, p_name text, p_description text, p_sa_access integer, p_sa_owner_id uuid, p_sa_root_id uuid, p_sa_created_by uuid, p_inherits boolean, p_type claimius.claim_type) IS 'Creates a new claim. p_sa_access is a bitwise mask: 0x01 owner, 0x02 write, 0x04 read, 0x08 execute, 0x10 deny.';
 
 -- update_claim
 DROP FUNCTION IF EXISTS claimius.update_claim(UUID, TEXT, TEXT, INTEGER, BOOLEAN, BOOLEAN);
@@ -1295,7 +1295,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.update_claim IS 'Patches selected fields on a claim.';
+COMMENT ON FUNCTION claimius.update_claim(p_claim_id uuid, p_name text, p_description text, p_sa_access integer, p_inherits boolean) IS 'Patches selected fields on a claim.';
 
 -- remove_claim
 CREATE OR REPLACE FUNCTION claimius.remove_claim(
@@ -1310,7 +1310,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.remove_claim IS 'Soft deletes a claim and its user_claim and claim_object rows.';
+COMMENT ON FUNCTION claimius.remove_claim(p_claim_id uuid, p_deleted_by uuid) IS 'Soft deletes a claim and its user_claim and claim_object rows.';
 
 -- assign_claim_user
 CREATE OR REPLACE FUNCTION claimius.assign_claim_user(
@@ -1337,7 +1337,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.assign_claim_user IS 'Grants a claim to a user in an app.';
+COMMENT ON FUNCTION claimius.assign_claim_user(p_app_id uuid, p_claim_id uuid, p_user_id uuid, p_sa_owner_id uuid, p_sa_created_by uuid, p_reason text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) IS 'Grants a claim to a user in an app.';
 
 -- update_claim_user
 CREATE OR REPLACE FUNCTION claimius.update_claim_user(
@@ -1359,7 +1359,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.update_claim_user IS 'Patches selected fields on a user_claim.';
+COMMENT ON FUNCTION claimius.update_claim_user(p_user_claim_id uuid, p_reason text, p_starts_at timestamp with time zone, p_ends_at timestamp with time zone) IS 'Patches selected fields on a user_claim.';
 
 -- remove_user_claim
 CREATE OR REPLACE FUNCTION claimius.remove_user_claim(
@@ -1373,7 +1373,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.remove_user_claim IS 'Soft deletes a user_claim row.';
+COMMENT ON FUNCTION claimius.remove_user_claim(p_user_claim_id uuid, p_deleted_by uuid) IS 'Soft deletes a user_claim row.';
 
 -- assign_claim_object
 DROP FUNCTION IF EXISTS claimius.assign_claim_object(UUID, UUID, UUID, TEXT, UUID, UUID, UUID, INTEGER, BOOLEAN, TEXT, UUID, TEXT);
@@ -1406,7 +1406,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.assign_claim_object IS 'Binds a claim. With (object_type, object_id) p_scope keys are field names; without them p_scope keys are custom. p_sa_access is a bitwise mask.';
+COMMENT ON FUNCTION claimius.assign_claim_object(p_app_id uuid, p_claim_id uuid, p_sa_owner_id uuid, p_sa_root_id uuid, p_sa_created_by uuid, p_object_id uuid, p_object_type text, p_sa_access integer, p_inherits boolean, p_reason text, p_ref_id uuid, p_scope jsonb) IS 'Binds a claim. With (object_type, object_id) p_scope keys are field names; without them p_scope keys are custom. p_sa_access is a bitwise mask.';
 
 -- update_claim_object
 DROP FUNCTION IF EXISTS claimius.update_claim_object(UUID, TEXT, BOOLEAN);
@@ -1432,7 +1432,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.update_claim_object IS 'Patches selected fields on a claim_object.';
+COMMENT ON FUNCTION claimius.update_claim_object(p_claim_object_id uuid, p_reason text, p_inherits boolean, p_sa_access integer, p_scope jsonb) IS 'Patches selected fields on a claim_object.';
 
 -- remove_claim_object
 CREATE OR REPLACE FUNCTION claimius.remove_claim_object(
@@ -1446,7 +1446,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.remove_claim_object IS 'Soft deletes a claim_object row.';
+COMMENT ON FUNCTION claimius.remove_claim_object(p_claim_object_id uuid, p_deleted_by uuid) IS 'Soft deletes a claim_object row.';
 
 -- ============================================================================
 -- merge_user
@@ -1549,7 +1549,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.merge_user IS 'Reassigns all data from source user_id to target user_id across apps.';
+COMMENT ON FUNCTION claimius.merge_user(p_target_user_id uuid, p_source_user_id uuid, p_acting_user_claim uuid) IS 'Reassigns all data from source user_id to target user_id across apps.';
 
 -- ============================================================================
 -- migrate_root: cross root organization migration. Should be called rarely
@@ -1605,7 +1605,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.migrate_root IS 'Admin function: cross root migration. Use only when absolutely required.';
+COMMENT ON FUNCTION claimius.migrate_root(p_object_type text, p_object_id uuid, p_new_root_id uuid) IS 'Admin function: cross root migration. Use only when absolutely required.';
 
 -- ============================================================================
 -- Init functions
@@ -1684,7 +1684,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.init_claimius_tables IS 'Registers external tables. Idempotent. Called by implementer migrations.';
+COMMENT ON FUNCTION claimius.init_claimius_tables(VARIADIC p_object_types text[]) IS 'Registers external tables. Idempotent. Called by implementer migrations.';
 
 -- _bulk_seed_user_object
 -- For a registered table with existing rows, populates user_object,
@@ -1732,7 +1732,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius._bulk_seed_user_object IS 'Seeds user_object for an existing table at registration time.';
+COMMENT ON FUNCTION claimius._bulk_seed_user_object(p_object_type text) IS 'Seeds user_object for an existing table at registration time.';
 
 -- ----------------------------------------------------------------------------
 -- recompute_state
@@ -1840,7 +1840,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.init_claimius_internal IS 'Registers internal claimius.* tables in table_info. Called once at schema bootstrap.';
+COMMENT ON FUNCTION claimius.init_claimius_internal() IS 'Registers internal claimius.* tables in table_info. Called once at schema bootstrap.';
 
 -- ----------------------------------------------------------------------------
 -- create_root_organization
@@ -2170,7 +2170,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.init_prophet IS 'Bootstrap function. Sets up system app, org, user, and claim. Idempotent.';
+COMMENT ON FUNCTION claimius.init_prophet(p_system_app_slug text, p_system_app_name text, p_system_app_private_key text, p_system_app_private_seed text, p_system_user_id uuid, p_system_app_redirect_uri text, p_system_app_sync_uri text, p_system_app_contact_email text, p_system_app_image text, p_system_app_provider_ids uuid[], p_system_app_style jsonb, p_system_app_description text, p_system_org_name text, p_system_claim_name text, p_system_claim_id uuid, p_default_claim jsonb) IS 'Bootstrap function. Sets up system app, org, user, and claim. Idempotent.';
 
 -- ----------------------------------------------------------------------------
 -- init_disciple
@@ -2217,7 +2217,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.init_disciple IS 'Bootstrap as a disciple. Requires the upstream prophet app slug. State arrives from prophet via sync.';
+COMMENT ON FUNCTION claimius.init_disciple(p_disciple_app_slug text) IS 'Bootstrap as a disciple. Requires the upstream prophet app slug. State arrives from prophet via sync.';
 
 -- ----------------------------------------------------------------------------
 -- init_hybrid
@@ -2265,7 +2265,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.init_hybrid IS 'Bootstrap as a hybrid (prophet + disciple).';
+COMMENT ON FUNCTION claimius.init_hybrid(p_system_app_slug text, p_system_app_name text, p_system_app_private_key text, p_system_app_private_seed text, p_disciple_app_slug text, p_system_user_id uuid, p_system_app_redirect_uri text, p_system_app_sync_uri text, p_system_app_contact_email text, p_system_app_image text, p_system_app_provider_ids uuid[], p_system_app_style jsonb, p_system_app_description text, p_system_org_name text, p_system_claim_name text, p_system_claim_id uuid, p_default_claim jsonb) IS 'Bootstrap as a hybrid (prophet + disciple).';
 
 -- ----------------------------------------------------------------------------
 -- Role grant helpers
@@ -2422,4 +2422,4 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-COMMENT ON FUNCTION claimius.ensure_app_user IS 'Creates per app samna_user row and grants the app default claim. Idempotent.';
+COMMENT ON FUNCTION claimius.ensure_app_user(p_user_id uuid, p_app_id uuid, p_first_name text, p_last_name text, p_user_name text, p_user_image text, p_email text, p_phone text, p_external_id text) IS 'Creates per app samna_user row and grants the app default claim. Idempotent.';

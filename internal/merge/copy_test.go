@@ -57,16 +57,19 @@ func TestCopyOne(t *testing.T) {
 	}
 }
 
-func TestIntroducedIdentsNoMatch(t *testing.T) {
+func TestFileStatementsNoSchemaObjects(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "v.sql")
 	os.WriteFile(p, []byte("SELECT 1; UPDATE x SET a = 1;"), 0o644)
-	got, err := introducedIdents(p)
+	got, nonSchema, err := fileStatements(p)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 0 {
-		t.Errorf("expected no idents, got %v", got)
+		t.Errorf("expected no schema idents, got %v", got)
+	}
+	if !nonSchema {
+		t.Errorf("SELECT and UPDATE must flag the file as non-schema")
 	}
 }
 

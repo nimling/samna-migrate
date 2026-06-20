@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
@@ -44,7 +45,7 @@ Refreshes ` + lock.FileName + ` when it exists.`,
 			return err
 		}
 		defer d.Close()
-		if err := bootCheck(ctx, d, stepsFile, cli.Version); err != nil {
+		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
 			return err
 		}
 		if err := confirmRebaseline(cfg, args); err != nil {
@@ -66,23 +67,37 @@ Refreshes ` + lock.FileName + ` when it exists.`,
 
 			var id int
 			var dbSha, state string
+			var appliedAt *time.Time
 			err = d.Pool.QueryRow(ctx,
-				`SELECT id, sha256, state FROM samna_migrate.file WHERE file_path = $1`, fp).
-				Scan(&id, &dbSha, &state)
+				`SELECT id, sha256, state, applied_at FROM samna_migrate.file WHERE file_path = $1`, fp).
+				Scan(&id, &dbSha, &state, &appliedAt)
 			if err != nil {
 				return fmt.Errorf("%s is not in samna_migrate.file: %w", fp, err)
 			}
-			if dbSha == diskSha {
-				log.Info("  %s already at disk sha, skipping", fp)
+			if dbSha == diskSha && state == "applied" {
+				log.Info("  %s already at disk sha and applied, skipping", fp)
 				continue
 			}
 
-			_, err = d.Pool.Exec(ctx, `
-				UPDATE samna_migrate.file
-				SET sha256 = $1, size_bytes = $2, updated_at = now()
-				WHERE id = $3`, diskSha, size, id)
-			if err != nil {
-				return err
+			if state == "pending" && appliedAt != nil {
+				_, err = d.Pool.Exec(ctx, `
+					UPDATE samna_migrate.file
+					SET state = 'applied', state_changed_at = now(), updated_at = now()
+					WHERE id = $1`, id)
+				if err != nil {
+					return err
+				}
+				log.Info("  %s restored to applied, replay cancelled", fp)
+			}
+
+			if dbSha != diskSha {
+				err = d.ExecUpgrade(ctx, `
+					UPDATE samna_migrate.file
+					SET sha256 = $1, size_bytes = $2, updated_at = now()
+					WHERE id = $3`, diskSha, size, id)
+				if err != nil {
+					return err
+				}
 			}
 
 			notes := fmt.Sprintf("prior=%s new=%s reason=%s", dbSha, diskSha, rebaselineReason)

@@ -22,6 +22,8 @@ build:
 install: build
     rm -f `go env GOPATH`/bin/smig
     install -m 755 bin/smig `go env GOPATH`/bin/smig
+    go install github.com/nimling/sbump/cmd@latest
+    mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/sbump"
 
 clean:
     rm -rf bin/
@@ -120,8 +122,8 @@ test-live:
 dev *args:
     go run ./cmd {{args}}
 
-deploy:
-    @../sbump/sbump.sh patch --env APP_VERSION --push-version
+deploy level="patch":
+    @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version
 
 help:
     @echo "Available targets:"

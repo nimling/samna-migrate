@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/nimling/samna-migrate/pkg/cli"
 )
 
 // E2E targets a live bookable test database. The smig-managed image is brought
@@ -130,8 +131,8 @@ func TestSmigUpgradeWalksChain(t *testing.T) {
 		`SELECT schema_version FROM samna_migrate.state WHERE id = 1`).Scan(&sv); err != nil {
 		t.Fatal(err)
 	}
-	if sv != 3 {
-		t.Errorf("schema_version after upgrade = %d, want 3", sv)
+	if sv != cli.SchemaVersion {
+		t.Errorf("schema_version after upgrade = %d, want %d", sv, cli.SchemaVersion)
 	}
 
 	var ysha *string

@@ -30,7 +30,7 @@ and smig merge --apply refresh the lockfile automatically when it exists.`,
 			return err
 		}
 		defer d.Close()
-		if err := bootCheck(ctx, d, stepsFile, cli.Version); err != nil {
+		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
 			return err
 		}
 		entries, err := lock.Collect(ctx, d)

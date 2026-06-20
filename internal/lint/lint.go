@@ -40,6 +40,7 @@ var (
 	rxAddColumn       = regexp.MustCompile(`(?i)ADD\s+COLUMN\s+(IF\s+NOT\s+EXISTS\s+)?`)
 	rxCreateFunction  = regexp.MustCompile(`(?i)CREATE\s+(OR\s+REPLACE\s+)?FUNCTION`)
 	rxPgTypeGuard     = regexp.MustCompile(`(?i)pg_type`)
+	rxDupObjectGuard  = regexp.MustCompile(`(?i)duplicate_object`)
 )
 
 func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
@@ -98,8 +99,8 @@ func checkContent(r *Result, rel, stepType, content string) {
 			break
 		}
 	}
-	if rxCreateType.MatchString(content) && !rxPgTypeGuard.MatchString(content) {
-		r.add(rel, "warn", "CREATE TYPE without a pg_type existence guard fails on reapply")
+	if rxCreateType.MatchString(content) && !rxPgTypeGuard.MatchString(content) && !rxDupObjectGuard.MatchString(content) {
+		r.add(rel, "warn", "CREATE TYPE without a pg_type or duplicate_object guard fails on reapply")
 	}
 	if stepType != "migration" {
 		return
