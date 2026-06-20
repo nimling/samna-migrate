@@ -22,10 +22,20 @@ func envDefault(key, def string) string {
 	return def
 }
 
+const banner = "\n" +
+	"   ▄████████   ▄▄▄▄███▄▄▄▄    ▄█     ▄██████▄  \n" +
+	"  ███    ███ ▄██▀▀▀███▀▀▀██▄ ███    ███    ███ \n" +
+	"  ███    █▀  ███   ███   ███ ███▌   ███    █▀  \n" +
+	"  ███        ███   ███   ███ ███▌  ▄███        \n" +
+	"▀███████████ ███   ███   ███ ███▌ ▀▀███ ████▄  \n" +
+	"         ███ ███   ███   ███ ███    ███    ███ \n" +
+	"   ▄█    ███ ███   ███   ███ ███    ███    ███ \n" +
+	" ▄████████▀   ▀█   ███   █▀  █▀     ████████▀  \n"
+
 var rootCmd = &cobra.Command{
 	Use:     "smig",
 	Short:   "Database migration tool with upgrade-gated CI deploys",
-	Long:    "smig runs structured database migrations defined in a yaml step file, with sha-locked apply history, optional position-based ordering, and a strict boot_check that gates CI behind operator-acknowledged local upgrades.",
+	Long:    banner + "\nsmig runs structured database migrations defined in a yaml step file, with sha-locked apply history, optional position-based ordering, and a strict boot_check that gates CI behind operator-acknowledged local upgrades.",
 	Version: cli.Version,
 }
 
