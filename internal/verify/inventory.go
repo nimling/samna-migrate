@@ -3,6 +3,7 @@ package verify
 import (
 	"context"
 	"sort"
+	"strings"
 
 	"github.com/nimling/samna-migrate/internal/db"
 	"github.com/nimling/samna-migrate/internal/log"
@@ -173,22 +174,77 @@ func CompareInventories(want, got map[string]string) *InventoryDiff {
 	return diff
 }
 
-func reportDiff(diff *InventoryDiff) {
-	const limit = 40
-	section := func(label string, items []string) {
+func reportDiff(diff *InventoryDiff, live, candidate map[string]string) {
+	const listLimit = 40
+	const bodyLimit = 16
+
+	list := func(label, mark string, items []string) {
 		if len(items) == 0 {
 			return
 		}
 		log.Warn("%s: %d", label, len(items))
 		for i, it := range items {
-			if i == limit {
-				log.Plain("    and %d more", len(items)-limit)
+			if i == listLimit {
+				log.Plain("    and %d more", len(items)-listLimit)
 				break
 			}
-			log.Plain("    %s", it)
+			log.Plain("    %s %s", mark, it)
 		}
 	}
-	section("missing in candidate", diff.Missing)
-	section("extra in candidate", diff.Extra)
-	section("differs from live", diff.Different)
+
+	list("present in live but missing from the candidate", "-", diff.Missing)
+	list("present in the candidate but missing from live", "+", diff.Extra)
+
+	if len(diff.Different) > 0 {
+		log.Warn("definition differs between live and candidate: %d", len(diff.Different))
+		for i, it := range diff.Different {
+			if i == listLimit {
+				log.Plain("    and %d more", len(diff.Different)-listLimit)
+				break
+			}
+			log.Plain("    ~ %s", it)
+			onlyLive, onlyCand := lineDelta(live[it], candidate[it])
+			shown := 0
+			for _, ln := range onlyLive {
+				if shown == bodyLimit {
+					log.Plain("        ... body delta truncated")
+					break
+				}
+				log.Plain("        live - %s", ln)
+				shown++
+			}
+			for _, ln := range onlyCand {
+				if shown == bodyLimit {
+					log.Plain("        ... body delta truncated")
+					break
+				}
+				log.Plain("        cand + %s", ln)
+				shown++
+			}
+		}
+	}
+}
+
+func lineDelta(a, b string) (onlyA, onlyB []string) {
+	inB := map[string]bool{}
+	for _, ln := range strings.Split(b, "\n") {
+		inB[strings.TrimRight(ln, " \t")] = true
+	}
+	inA := map[string]bool{}
+	for _, ln := range strings.Split(a, "\n") {
+		inA[strings.TrimRight(ln, " \t")] = true
+	}
+	for _, ln := range strings.Split(a, "\n") {
+		t := strings.TrimRight(ln, " \t")
+		if t != "" && !inB[t] {
+			onlyA = append(onlyA, t)
+		}
+	}
+	for _, ln := range strings.Split(b, "\n") {
+		t := strings.TrimRight(ln, " \t")
+		if t != "" && !inA[t] {
+			onlyB = append(onlyB, t)
+		}
+	}
+	return onlyA, onlyB
 }

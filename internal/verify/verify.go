@@ -106,7 +106,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 			verdicts.Equality = true
 			log.Success("equality clean: %d objects match", len(liveInv))
 		} else {
-			reportDiff(diff)
+			reportDiff(diff, liveInv, candInv)
 		}
 
 		log.Header("verdict determinism: second clean bootstrap matches the first")
@@ -131,7 +131,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 				log.Success("determinism clean: two independent bootstraps match")
 			} else {
 				log.Err("two bootstraps of the same tree diverged")
-				reportDiff(diff2)
+				reportDiff(diff2, candInv, cand2Inv)
 			}
 		}
 	} else {
