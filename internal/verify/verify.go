@@ -26,11 +26,12 @@ type Options struct {
 
 func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) error {
 	upgradedDir := filepath.Join(filepath.Dir(cfg.StepsFile), ".upgraded")
-	if !hasContent(upgradedDir) {
-		return fmt.Errorf(".upgraded/ is missing or empty. Run smig merge first")
+	if hasContent(upgradedDir) {
+		log.Header("materialize candidate tree from " + dbDir + " overlaid with .upgraded/")
+	} else {
+		upgradedDir = ""
+		log.Header("materialize candidate tree from " + dbDir)
 	}
-
-	log.Header("materialize candidate tree")
 	candidateDir, candSteps, err := materializeCandidate(stepsCfg, cfg.StepsFile, dbDir, upgradedDir)
 	if err != nil {
 		return err
@@ -152,6 +153,10 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	}
 	if opts.DryRun {
 		log.Info("dry run: proof manifest not written")
+		return nil
+	}
+	if upgradedDir == "" {
+		log.Success("verify passed against the --db-dir tree")
 		return nil
 	}
 

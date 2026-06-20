@@ -17,17 +17,21 @@ var (
 
 var verifyCmd = &cobra.Command{
 	Use:   "verify",
-	Short: "Prove the merged .upgraded/ tree against a disposable postgres container",
-	Long: `Builds a candidate source tree from .upgraded/ overlaid on the current tree,
-bootstraps it into a disposable postgres container, and records three verdicts:
+	Short: "Prove the --db-dir tree against a disposable postgres container",
+	Long: `Builds a candidate source tree from --db-dir, overlaying .upgraded/ when it
+is present, bootstraps it into a disposable postgres container, and records
+three verdicts:
 
   bootstrap   the candidate tree builds a fresh database without errors
   equality    the fresh database matches the live database object for object
   reapply     every base and seed file applies a second time without errors
               and without changing any object
 
-All three passing writes .upgraded/verify.json, the proof that
-smig merge --apply requires unless --force is given.`,
+When .upgraded/ exists the candidate is the merged tree and all three passing
+writes .upgraded/verify.json, the proof that smig merge --apply requires unless
+--force is given. When .upgraded/ is absent the --db-dir tree is verified as is,
+so verify doubles as a standalone check that the current tree reproduces the
+live database object for object.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
