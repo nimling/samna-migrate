@@ -40,6 +40,10 @@ func Plain(format string, args ...any) {
 	fmt.Printf(format+"\n", args...)
 }
 
+func Step(name, detail string) {
+	fmt.Printf("  %s✓%s %s%s%s%s\n", colorGreen, colorReset, name, colorGray, detail, colorReset)
+}
+
 func Fatal(format string, args ...any) {
 	Err(format, args...)
 	os.Exit(1)

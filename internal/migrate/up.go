@@ -75,10 +75,11 @@ var upCmd = &cobra.Command{
 		start := time.Now()
 		for _, p := range pendings {
 			st, _ := apply.FileRel(stepsCfg, p.FilePath, dbDir)
-			log.Plain("  %s", p.FilePath)
+			fileStart := time.Now()
 			if err := apply.File(ctx, d, p, st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
 				return fmt.Errorf("%s failed: %w", p.FilePath, err)
 			}
+			log.Step(p.FilePath, fmt.Sprintf("  %s", time.Since(fileStart).Round(time.Millisecond)))
 			applied++
 		}
 		log.Success("applied %d in %s", applied, time.Since(start).Round(time.Millisecond))

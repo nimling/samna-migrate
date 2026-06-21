@@ -1,11 +1,13 @@
 package db
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"sort"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nimling/samna-migrate/internal/config"
@@ -69,6 +71,7 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 		args = append(args, "-v", k+"="+vars[k])
 	}
 	args = append(args, "-c", "SET check_function_bodies = false")
+	args = append(args, "-c", "SET client_min_messages = warning")
 	if preSQL != "" {
 		args = append(args, "-c", preSQL)
 	}
@@ -78,9 +81,17 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 	if db.cfg.PGSSLMode != "" {
 		cmd.Env = append(cmd.Env, "PGSSLMODE="+db.cfg.PGSSLMode)
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &out
+	if err := cmd.Run(); err != nil {
+		trimmed := strings.TrimSpace(out.String())
+		if trimmed != "" {
+			return fmt.Errorf("%w\n%s", err, trimmed)
+		}
+		return err
+	}
+	return nil
 }
 
 func (db *DB) ColumnExists(ctx context.Context, schema, table, column string) (bool, error) {
