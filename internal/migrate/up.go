@@ -3,7 +3,6 @@ package migrate
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -80,27 +79,40 @@ var upCmd = &cobra.Command{
 		_ = hostName
 
 		groups := groupPending(pendings)
-		width := 0
+		rightEdge := 0
 		for _, g := range groups {
-			if len(g.name) > width {
-				width = len(g.name)
+			if w := 2 + len(g.name) + 2 + len(fmt.Sprintf("%d applied", len(g.files))); w > rightEdge {
+				rightEdge = w
 			}
+		}
+		for _, p := range pendings {
+			if w := 4 + len(p.FileName) + 2 + durWidth; w > rightEdge {
+				rightEdge = w
+			}
+		}
+
+		var objCols objColumns
+		objByFile := map[string][]sqlscan.Object{}
+		fileContent := map[string]string{}
+		if log.Level >= log.LevelVerbose {
+			objCols, objByFile, fileContent = scanObjects(pendings, dbDir)
 		}
 
 		applied := 0
 		start := time.Now()
 		for _, g := range groups {
 			st := findStep(stepsCfg, g.name)
-			log.Section(fmt.Sprintf("%-*s", width, g.name), fmt.Sprintf("%d applied", len(g.files)))
+			log.Section(g.name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
 			logStepInternals(st)
+			headerShown := false
 			for _, p := range g.files {
 				fileStart := time.Now()
 				if err := apply.File(ctx, d, p, st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
 					return fmt.Errorf("%s failed: %w", p.FilePath, err)
 				}
-				log.Step(p.FileName, fmt.Sprintf("  %s", time.Since(fileStart).Round(time.Millisecond)))
+				log.Step(p.FileName, time.Since(fileStart).Round(time.Millisecond).String(), rightEdge)
 				log.Detail("      sha %s  size %dB  pos %d", shortSha(p.Sha), p.Size, p.Position)
-				logObjects(dbDir + "/" + p.FilePath)
+				logObjects(objCols, objByFile[p.FilePath], fileContent[p.FilePath], p.FileName, &headerShown)
 				applied++
 			}
 		}
@@ -175,71 +187,86 @@ func shortSha(s string) string {
 	return s
 }
 
-func logObjects(absPath string) {
+type objColumns struct {
+	cols  []string
+	width map[string]int
+}
+
+func scanObjects(pendings []apply.Pending, dbDir string) (objColumns, map[string][]sqlscan.Object, map[string]string) {
+	oc := objColumns{cols: []string{"kind", "name"}, width: map[string]int{"kind": len("kind"), "name": len("name")}}
+	seen := map[string]bool{"kind": true, "name": true}
+	byFile := map[string][]sqlscan.Object{}
+	content := map[string]string{}
+	for _, p := range pendings {
+		b, err := os.ReadFile(dbDir + "/" + p.FilePath)
+		if err != nil {
+			continue
+		}
+		content[p.FilePath] = string(b)
+		objs := sqlscan.Scan(string(b))
+		byFile[p.FilePath] = objs
+		for _, o := range objs {
+			if len(o.Kind) > oc.width["kind"] {
+				oc.width["kind"] = len(o.Kind)
+			}
+			if len(o.Name) > oc.width["name"] {
+				oc.width["name"] = len(o.Name)
+			}
+			for _, s := range o.Stats {
+				if !seen[s.Key] {
+					seen[s.Key] = true
+					oc.cols = append(oc.cols, s.Key)
+					oc.width[s.Key] = len(s.Key)
+				}
+				if len(s.Val) > oc.width[s.Key] {
+					oc.width[s.Key] = len(s.Val)
+				}
+			}
+		}
+	}
+	return oc, byFile, content
+}
+
+func logObjects(oc objColumns, objs []sqlscan.Object, content, base string, headerShown *bool) {
 	if log.Level < log.LevelVerbose {
 		return
 	}
-	b, err := os.ReadFile(absPath)
-	if err != nil {
-		return
-	}
-	content := string(b)
-	objs := sqlscan.Scan(content)
-	if len(objs) == 0 {
-		return
-	}
-	cols := []string{"kind", "name"}
-	seen := map[string]bool{"kind": true, "name": true}
-	for _, o := range objs {
-		for _, s := range o.Stats {
-			if !seen[s.Key] {
-				seen[s.Key] = true
-				cols = append(cols, s.Key)
+	if len(objs) > 0 {
+		cell := func(o sqlscan.Object, key string) string {
+			switch key {
+			case "kind":
+				return o.Kind
+			case "name":
+				return o.Name
 			}
-		}
-	}
-	cell := func(o sqlscan.Object, key string) string {
-		switch key {
-		case "kind":
-			return o.Kind
-		case "name":
-			return o.Name
-		}
-		for _, s := range o.Stats {
-			if s.Key == key {
-				return s.Val
+			for _, s := range o.Stats {
+				if s.Key == key {
+					return s.Val
+				}
 			}
+			return ""
 		}
-		return ""
-	}
-	width := make([]int, len(cols))
-	for i, c := range cols {
-		width[i] = len(c)
-	}
-	for _, o := range objs {
-		for i, c := range cols {
-			if v := len(cell(o, c)); v > width[i] {
-				width[i] = v
+		row := func(get func(string) string) string {
+			var b strings.Builder
+			b.WriteString("      ")
+			for _, c := range oc.cols {
+				b.WriteString(fmt.Sprintf("%-*s  ", oc.width[c], get(c)))
 			}
+			return strings.TrimRight(b.String(), " ")
 		}
-	}
-	row := func(get func(string) string) string {
-		var b strings.Builder
-		b.WriteString("      ")
-		for i, c := range cols {
-			b.WriteString(fmt.Sprintf("%-*s  ", width[i], get(c)))
+		if !*headerShown {
+			log.Detail("%s", row(func(c string) string { return c }))
+			*headerShown = true
 		}
-		return strings.TrimRight(b.String(), " ")
-	}
-	log.Detail("%s", row(func(c string) string { return c }))
-	for _, o := range objs {
-		log.Detail("%s", row(func(c string) string { return cell(o, c) }))
-		if log.Level == log.LevelVerbose {
-			logSQLPreview(o.SQL)
+		for _, o := range objs {
+			log.Detail("%s", row(func(c string) string { return cell(o, c) }))
+			if log.Level == log.LevelVerbose {
+				logSQLPreview(o.SQL)
+			}
 		}
 	}
 	if log.Level >= log.LevelExtreme {
-		log.Dump("      ── %s ──", filepath.Base(absPath))
+		log.Dump("      ── %s ──", base)
 		for _, ln := range strings.Split(strings.TrimRight(content, "\n"), "\n") {
 			log.Dump("        %s", ln)
 		}
@@ -247,6 +274,8 @@ func logObjects(absPath string) {
 }
 
 const sqlPreviewLines = 8
+
+const durWidth = 8
 
 func logSQLPreview(sql string) {
 	if strings.TrimSpace(sql) == "" {

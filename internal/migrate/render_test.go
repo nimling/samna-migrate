@@ -7,7 +7,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/nimling/samna-migrate/internal/apply"
 	"github.com/nimling/samna-migrate/internal/log"
+	"github.com/nimling/samna-migrate/internal/sqlscan"
 )
 
 func capture(f func()) string {
@@ -40,35 +42,38 @@ $$ LANGUAGE plpgsql STABLE;
 CREATE TABLE app.thing (id UUID PRIMARY KEY, name TEXT);
 `
 
-func writeSample(t *testing.T) string {
+func setupSample(t *testing.T) (objColumns, map[string][]sqlscan.Object, map[string]string, string) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "V1.0__sample.sql")
-	if err := os.WriteFile(path, []byte(renderSample), 0o644); err != nil {
+	dir := t.TempDir()
+	rel := "V1.0__sample.sql"
+	if err := os.WriteFile(filepath.Join(dir, rel), []byte(renderSample), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	return path
+	oc, byFile, content := scanObjects([]apply.Pending{{FilePath: rel, FileName: rel}}, dir)
+	return oc, byFile, content, rel
 }
 
 func TestLogObjectsSilentAndNormal(t *testing.T) {
-	path := writeSample(t)
+	oc, byFile, content, rel := setupSample(t)
 	defer func() { log.Level = log.LevelNormal }()
 
-	log.Level = log.LevelNormal
-	if out := capture(func() { logObjects(path) }); out != "" {
-		t.Errorf("normal level printed object table: %q", out)
-	}
-	log.Level = log.LevelSilent
-	if out := capture(func() { logObjects(path) }); out != "" {
-		t.Errorf("silent level printed object table: %q", out)
+	for _, lvl := range []int{log.LevelNormal, log.LevelSilent} {
+		log.Level = lvl
+		h := false
+		out := capture(func() { logObjects(oc, byFile[rel], content[rel], rel, &h) })
+		if out != "" {
+			t.Errorf("level %d printed object table: %q", lvl, out)
+		}
 	}
 }
 
 func TestLogObjectsVerbosePreview(t *testing.T) {
-	path := writeSample(t)
+	oc, byFile, content, rel := setupSample(t)
 	defer func() { log.Level = log.LevelNormal }()
 
 	log.Level = log.LevelVerbose
-	out := capture(func() { logObjects(path) })
+	h := false
+	out := capture(func() { logObjects(oc, byFile[rel], content[rel], rel, &h) })
 
 	for _, want := range []string{"function", "app.compute", "params", "CREATE OR REPLACE FUNCTION", "more lines"} {
 		if !strings.Contains(out, want) {
@@ -80,12 +85,28 @@ func TestLogObjectsVerbosePreview(t *testing.T) {
 	}
 }
 
+func TestLogObjectsHeaderOncePerStep(t *testing.T) {
+	oc, byFile, content, rel := setupSample(t)
+	defer func() { log.Level = log.LevelNormal }()
+
+	log.Level = log.LevelVerbose
+	h := false
+	out := capture(func() {
+		logObjects(oc, byFile[rel], content[rel], rel, &h)
+		logObjects(oc, byFile[rel], content[rel], rel, &h)
+	})
+	if n := strings.Count(out, "params"); n != 1 {
+		t.Errorf("header printed %d times across two files, want 1\n%s", n, out)
+	}
+}
+
 func TestLogObjectsExtremeDump(t *testing.T) {
-	path := writeSample(t)
+	oc, byFile, content, rel := setupSample(t)
 	defer func() { log.Level = log.LevelNormal }()
 
 	log.Level = log.LevelExtreme
-	out := capture(func() { logObjects(path) })
+	h := false
+	out := capture(func() { logObjects(oc, byFile[rel], content[rel], rel, &h) })
 
 	if !strings.Contains(out, "──") {
 		t.Errorf("extreme output missing full file dump marker\n%s", out)

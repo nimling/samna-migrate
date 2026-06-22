@@ -3,6 +3,7 @@ package log
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 const (
@@ -33,11 +34,15 @@ func Header(msg string) {
 	fmt.Printf("\n%s%s%s%s\n", colorBold, colorCyan, msg, colorReset)
 }
 
-func Section(title, right string) {
+func Section(title, right string, rightEdge int) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("\n%s%s▸ %s%s  %s%s%s\n", colorBold, colorCyan, title, colorReset, colorGray, right, colorReset)
+	pad := rightEdge - 2 - len(title) - len(right)
+	if pad < 1 {
+		pad = 1
+	}
+	fmt.Printf("\n%s%s▸ %s%s%s%s%s%s\n", colorBold, colorCyan, title, colorReset, strings.Repeat(" ", pad), colorGray, right, colorReset)
 }
 
 func Detail(format string, args ...any) {
@@ -93,11 +98,15 @@ func Plain(format string, args ...any) {
 	fmt.Printf(format+"\n", args...)
 }
 
-func Step(name, detail string) {
+func Step(name, detail string, rightEdge int) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("  %s✓%s %s%s%s%s\n", colorGreen, colorReset, name, colorGray, detail, colorReset)
+	pad := rightEdge - 4 - len(name) - len(detail)
+	if pad < 1 {
+		pad = 1
+	}
+	fmt.Printf("  %s✓%s %s%s%s%s%s\n", colorGreen, colorReset, name, strings.Repeat(" ", pad), colorGray, detail, colorReset)
 }
 
 func Fatal(format string, args ...any) {
