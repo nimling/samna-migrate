@@ -101,8 +101,12 @@ var upCmd = &cobra.Command{
 		applied := 0
 		start := time.Now()
 		for _, g := range groups {
-			st := findStep(stepsCfg, g.name)
-			log.Section(g.name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
+			st := findStep(stepsCfg, g.slug)
+			name := g.name
+			if st != nil {
+				name = st.Name
+			}
+			log.Section(name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
 			logStepInternals(st)
 			headerShown := false
 			for _, p := range g.files {
@@ -131,6 +135,7 @@ var upCmd = &cobra.Command{
 
 type pendingGroup struct {
 	name  string
+	slug  string
 	files []apply.Pending
 }
 
@@ -138,10 +143,10 @@ func groupPending(pendings []apply.Pending) []*pendingGroup {
 	groups := []*pendingGroup{}
 	index := map[string]*pendingGroup{}
 	for _, p := range pendings {
-		g := index[p.StepName]
+		g := index[p.Slug]
 		if g == nil {
-			g = &pendingGroup{name: p.StepName}
-			index[p.StepName] = g
+			g = &pendingGroup{name: p.StepName, slug: p.Slug}
+			index[p.Slug] = g
 			groups = append(groups, g)
 		}
 		g.files = append(g.files, p)
@@ -149,9 +154,9 @@ func groupPending(pendings []apply.Pending) []*pendingGroup {
 	return groups
 }
 
-func findStep(cfg *steps.Config, name string) *steps.Step {
+func findStep(cfg *steps.Config, slug string) *steps.Step {
 	for i := range cfg.Steps {
-		if cfg.Steps[i].Name == name {
+		if cfg.Steps[i].Slug == slug {
 			return &cfg.Steps[i]
 		}
 	}

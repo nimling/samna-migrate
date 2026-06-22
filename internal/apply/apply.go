@@ -72,7 +72,7 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		}
 		vars = expanded
 	}
-	runErr := d.RunPsqlFile(ctx, abs, preSQL, vars)
+	runErr := d.RunFile(ctx, abs, preSQL, vars)
 	end := time.Now()
 	durMs := end.Sub(start).Milliseconds()
 

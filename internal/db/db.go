@@ -1,12 +1,9 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
-	"sort"
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,57 +51,51 @@ func (db *DB) ExecUpgrade(ctx context.Context, sql string, args ...any) error {
 	return tx.Commit(ctx)
 }
 
-func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars map[string]string) error {
-	args := []string{"--quiet", "--single-transaction", "--set", "ON_ERROR_STOP=1"}
-	if db.cfg.PGHost != "" {
-		args = append(args, "--host", db.cfg.PGHost)
+func (db *DB) RunFile(ctx context.Context, path string, preSQL string, vars map[string]string) error {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read %s: %w", path, err)
 	}
-	if db.cfg.PGPort != "" {
-		args = append(args, "--port", db.cfg.PGPort)
-	}
-	args = append(args, "--username", db.cfg.PGUser, "--dbname", db.cfg.PGDatabase)
-	keys := make([]string, 0, len(vars))
-	for k := range vars {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		args = append(args, "-v", k+"="+vars[k])
-	}
-	args = append(args, "-c", "SET check_function_bodies = false")
+	body := substituteVars(string(content), vars)
+
 	noiseLevel := "warning"
 	if log.Level >= log.LevelExtreme {
 		noiseLevel = "notice"
 	}
-	args = append(args, "-c", "SET client_min_messages = "+noiseLevel)
-	if preSQL != "" {
-		args = append(args, "-c", preSQL)
-	}
-	args = append(args, "-f", path)
-	cmd := exec.CommandContext(ctx, "psql", args...)
-	cmd.Env = append(os.Environ(), "PGPASSWORD="+db.cfg.PGPassword)
-	if db.cfg.PGSSLMode != "" {
-		cmd.Env = append(cmd.Env, "PGSSLMODE="+db.cfg.PGSSLMode)
-	}
-	log.Dump("        psql %s", strings.Join(args, " "))
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		trimmed := strings.TrimSpace(out.String())
-		if trimmed != "" {
-			return fmt.Errorf("%w\n%s", err, trimmed)
-		}
+
+	tx, err := db.Pool.Begin(ctx)
+	if err != nil {
 		return err
 	}
-	if log.Level >= log.LevelExtreme {
-		for _, ln := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
-			if strings.TrimSpace(ln) != "" {
-				log.Dump("        psql| %s", ln)
-			}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, "SET LOCAL statement_timeout = 0"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "SET LOCAL check_function_bodies = false"); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "SET LOCAL client_min_messages = "+noiseLevel); err != nil {
+		return err
+	}
+	if preSQL != "" {
+		if _, err := tx.Exec(ctx, preSQL); err != nil {
+			return fmt.Errorf("%s pre: %w", path, err)
 		}
 	}
-	return nil
+	log.Dump("        pgx exec %s", path)
+	if _, err := tx.Exec(ctx, body); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
+	return tx.Commit(ctx)
+}
+
+func substituteVars(body string, vars map[string]string) string {
+	for k, v := range vars {
+		literal := "'" + strings.ReplaceAll(v, "'", "''") + "'"
+		body = strings.ReplaceAll(body, ":'"+k+"'", literal)
+	}
+	return body
 }
 
 func (db *DB) ColumnExists(ctx context.Context, schema, table, column string) (bool, error) {
