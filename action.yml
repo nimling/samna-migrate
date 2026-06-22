@@ -45,7 +45,7 @@ runs:
     - name: Install smig
       shell: bash
       run: |
-        go install github.com/nimling/samna-migrate/cmd@v${{ inputs.smig-version }}
+        go install -ldflags "-X github.com/nimling/samna-migrate/pkg/cli.Version=v${{ inputs.smig-version }}" github.com/nimling/samna-migrate/cmd@v${{ inputs.smig-version }}
         mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/smig"
         echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
     - name: Run smig ${{ inputs.command }}
