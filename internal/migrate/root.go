@@ -3,6 +3,7 @@ package migrate
 import (
 	"os"
 
+	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/pkg/cli"
 	"github.com/spf13/cobra"
 )
@@ -49,6 +50,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&envFile, "env", "", "Optional dotenv file to load")
 	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "Bypass interactive confirmation prompts")
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Bypass safety checks where supported")
+	rootCmd.PersistentFlags().BoolVarP(&log.Verbose, "verbose", "v", false, "Verbose output")
 	rootCmd.PersistentFlags().StringVar(&cli.AnthropicKey, "anthropic-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&cli.Model, "model", "claude-sonnet-4-6", "Claude model id for AI commands")
 

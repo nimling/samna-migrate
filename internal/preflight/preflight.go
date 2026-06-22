@@ -38,7 +38,7 @@ func Scan(ctx context.Context, d *db.DB, cfg *schema.YAMLSnapshot, stepsCfg *ste
 
 	for _, st := range stepsCfg.Steps {
 		if !st.Active() {
-			log.Plain("  step %s skipped, if condition false", st.Name)
+			log.Detail("  step %s skipped, if condition false", st.Name)
 			continue
 		}
 		files, err := st.ResolveFiles(dbDir)

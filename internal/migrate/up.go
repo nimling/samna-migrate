@@ -3,6 +3,7 @@ package migrate
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/nimling/samna-migrate/internal/apply"
@@ -12,6 +13,7 @@ import (
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/preflight"
 	"github.com/nimling/samna-migrate/internal/schema"
+	"github.com/nimling/samna-migrate/internal/sqlscan"
 	"github.com/nimling/samna-migrate/internal/steps"
 	"github.com/nimling/samna-migrate/pkg/cli"
 	"github.com/spf13/cobra"
@@ -48,10 +50,15 @@ var upCmd = &cobra.Command{
 		}
 
 		log.Header(fmt.Sprintf("migrate up: %s", cfg.PGDatabase))
-		_, err = preflight.Scan(ctx, d, snap, stepsCfg, dbDir)
+		report, err := preflight.Scan(ctx, d, snap, stepsCfg, dbDir)
 		if err != nil {
 			return err
 		}
+		if report.YAMLDrift {
+			log.Detail("yaml drift: db %s disk %s", shortSha(report.YAMLDBSha), shortSha(report.YAMLDiskSha))
+		}
+		log.Detail("preflight: %d new, %d unchanged, %d drift, %d rebased, %d missing",
+			report.FilesNew, report.FilesUnchanged, report.FilesDrift, report.FilesRebased, report.FilesMissing)
 
 		pendings, err := apply.ListPending(ctx, d)
 		if err != nil {
@@ -61,7 +68,7 @@ var upCmd = &cobra.Command{
 			log.Success("nothing pending")
 			return nil
 		}
-		log.Info("%d pending file(s)", len(pendings))
+		log.Detail("%d pending file(s)", len(pendings))
 
 		executedBy := cfg.PGUser
 		host := cfg.PGHost
@@ -71,18 +78,33 @@ var upCmd = &cobra.Command{
 		hostName, _ := os.Hostname()
 		_ = hostName
 
+		groups := groupPending(pendings)
+		width := 0
+		for _, g := range groups {
+			if len(g.name) > width {
+				width = len(g.name)
+			}
+		}
+
 		applied := 0
 		start := time.Now()
-		for _, p := range pendings {
-			st, _ := apply.FileRel(stepsCfg, p.FilePath, dbDir)
-			fileStart := time.Now()
-			if err := apply.File(ctx, d, p, st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
-				return fmt.Errorf("%s failed: %w", p.FilePath, err)
+		for _, g := range groups {
+			st := findStep(stepsCfg, g.name)
+			log.Section(fmt.Sprintf("%-*s", width, g.name), fmt.Sprintf("%d applied", len(g.files)))
+			logStepInternals(st)
+			for _, p := range g.files {
+				fileStart := time.Now()
+				if err := apply.File(ctx, d, p, st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
+					return fmt.Errorf("%s failed: %w", p.FilePath, err)
+				}
+				log.Step(p.FileName, fmt.Sprintf("  %s", time.Since(fileStart).Round(time.Millisecond)))
+				log.Detail("      sha %s  size %dB  pos %d", shortSha(p.Sha), p.Size, p.Position)
+				logObjects(dbDir + "/" + p.FilePath)
+				applied++
 			}
-			log.Step(p.FilePath, fmt.Sprintf("  %s", time.Since(fileStart).Round(time.Millisecond)))
-			applied++
 		}
-		log.Success("applied %d in %s", applied, time.Since(start).Round(time.Millisecond))
+		log.Plain("")
+		log.Success("applied %d files in %s", applied, time.Since(start).Round(time.Millisecond))
 
 		refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, cli.Version)
 		if err != nil {
@@ -92,4 +114,123 @@ var upCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+type pendingGroup struct {
+	name  string
+	files []apply.Pending
+}
+
+func groupPending(pendings []apply.Pending) []*pendingGroup {
+	groups := []*pendingGroup{}
+	index := map[string]*pendingGroup{}
+	for _, p := range pendings {
+		g := index[p.StepName]
+		if g == nil {
+			g = &pendingGroup{name: p.StepName}
+			index[p.StepName] = g
+			groups = append(groups, g)
+		}
+		g.files = append(g.files, p)
+	}
+	return groups
+}
+
+func findStep(cfg *steps.Config, name string) *steps.Step {
+	for i := range cfg.Steps {
+		if cfg.Steps[i].Name == name {
+			return &cfg.Steps[i]
+		}
+	}
+	return nil
+}
+
+func logStepInternals(st *steps.Step) {
+	if !log.Verbose || st == nil {
+		return
+	}
+	log.Detail("      type %s  schemas %s", st.Type, strings.Join(st.Schemas, ","))
+	if cond := strings.TrimSpace(st.If); cond != "" && cond != "null" {
+		log.Detail("      if %s", cond)
+	}
+	if st.Pre != "" {
+		log.Detail("      pre %s", st.Pre)
+	}
+	if st.Post != "" {
+		log.Detail("      post %s", st.Post)
+	}
+	vars, err := st.ExpandVars()
+	if err == nil {
+		for k, v := range vars {
+			log.Detail("      var %s=%s", k, v)
+		}
+	}
+}
+
+func shortSha(s string) string {
+	if len(s) > 12 {
+		return s[:12]
+	}
+	return s
+}
+
+func logObjects(absPath string) {
+	if !log.Verbose {
+		return
+	}
+	b, err := os.ReadFile(absPath)
+	if err != nil {
+		return
+	}
+	objs := sqlscan.Scan(string(b))
+	if len(objs) == 0 {
+		return
+	}
+	cols := []string{"kind", "name"}
+	seen := map[string]bool{"kind": true, "name": true}
+	for _, o := range objs {
+		for _, s := range o.Stats {
+			if !seen[s.Key] {
+				seen[s.Key] = true
+				cols = append(cols, s.Key)
+			}
+		}
+	}
+	cell := func(o sqlscan.Object, key string) string {
+		switch key {
+		case "kind":
+			return o.Kind
+		case "name":
+			return o.Name
+		}
+		for _, s := range o.Stats {
+			if s.Key == key {
+				return s.Val
+			}
+		}
+		return ""
+	}
+	width := make([]int, len(cols))
+	for i, c := range cols {
+		width[i] = len(c)
+	}
+	for _, o := range objs {
+		for i, c := range cols {
+			if v := len(cell(o, c)); v > width[i] {
+				width[i] = v
+			}
+		}
+	}
+	row := func(get func(string) string) string {
+		var b strings.Builder
+		b.WriteString("      ")
+		for i, c := range cols {
+			b.WriteString(fmt.Sprintf("%-*s  ", width[i], get(c)))
+		}
+		return strings.TrimRight(b.String(), " ")
+	}
+	log.Detail("%s", row(func(c string) string { return c }))
+	for _, o := range objs {
+		log.Detail("%s", row(func(c string) string { return cell(o, c) }))
+	}
 }

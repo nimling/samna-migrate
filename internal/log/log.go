@@ -16,8 +16,21 @@ const (
 	colorBold   = "\033[1m"
 )
 
+var Verbose bool
+
 func Header(msg string) {
 	fmt.Printf("\n%s%s%s%s\n", colorBold, colorCyan, msg, colorReset)
+}
+
+func Section(title, right string) {
+	fmt.Printf("\n%s%s▸ %s%s  %s%s%s\n", colorBold, colorCyan, title, colorReset, colorGray, right, colorReset)
+}
+
+func Detail(format string, args ...any) {
+	if !Verbose {
+		return
+	}
+	fmt.Printf("%s%s%s\n", colorGray, fmt.Sprintf(format, args...), colorReset)
 }
 
 func Info(format string, args ...any) {
