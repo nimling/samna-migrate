@@ -112,6 +112,7 @@ type Object struct {
 	Kind  string
 	Name  string
 	Line  int
+	SQL   string
 	Stats []Stat
 }
 
@@ -154,6 +155,7 @@ func Scan(content string) []Object {
 		o, ok := classify(content[j:end])
 		if ok {
 			o.Line = strings.Count(content[:j], "\n") + 1
+			o.SQL = strings.TrimSpace(content[j:end])
 			o.Stats = append(o.Stats, Stat{"at", strconv.Itoa(o.Line)})
 			objs = append(objs, o)
 		}

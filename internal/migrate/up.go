@@ -3,6 +3,7 @@ package migrate
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -146,7 +147,7 @@ func findStep(cfg *steps.Config, name string) *steps.Step {
 }
 
 func logStepInternals(st *steps.Step) {
-	if !log.Verbose || st == nil {
+	if log.Level < log.LevelVerbose || st == nil {
 		return
 	}
 	log.Detail("      type %s  schemas %s", st.Type, strings.Join(st.Schemas, ","))
@@ -175,14 +176,15 @@ func shortSha(s string) string {
 }
 
 func logObjects(absPath string) {
-	if !log.Verbose {
+	if log.Level < log.LevelVerbose {
 		return
 	}
 	b, err := os.ReadFile(absPath)
 	if err != nil {
 		return
 	}
-	objs := sqlscan.Scan(string(b))
+	content := string(b)
+	objs := sqlscan.Scan(content)
 	if len(objs) == 0 {
 		return
 	}
@@ -232,5 +234,33 @@ func logObjects(absPath string) {
 	log.Detail("%s", row(func(c string) string { return c }))
 	for _, o := range objs {
 		log.Detail("%s", row(func(c string) string { return cell(o, c) }))
+		if log.Level == log.LevelVerbose {
+			logSQLPreview(o.SQL)
+		}
+	}
+	if log.Level >= log.LevelExtreme {
+		log.Dump("      ── %s ──", filepath.Base(absPath))
+		for _, ln := range strings.Split(strings.TrimRight(content, "\n"), "\n") {
+			log.Dump("        %s", ln)
+		}
+	}
+}
+
+const sqlPreviewLines = 8
+
+func logSQLPreview(sql string) {
+	if strings.TrimSpace(sql) == "" {
+		return
+	}
+	lines := strings.Split(strings.TrimRight(sql, "\n"), "\n")
+	limit := len(lines)
+	if limit > sqlPreviewLines {
+		limit = sqlPreviewLines
+	}
+	for i := 0; i < limit; i++ {
+		log.Dim("        %s", lines[i])
+	}
+	if len(lines) > limit {
+		log.Dim("        … +%d more lines", len(lines)-limit)
 	}
 }

@@ -12,36 +12,73 @@ const (
 	colorYellow = "\033[33m"
 	colorCyan   = "\033[36m"
 	colorGray   = "\033[90m"
+	colorFaint  = "\033[38;5;240m"
 	colorWhite  = "\033[37m"
 	colorBold   = "\033[1m"
 )
 
-var Verbose bool
+const (
+	LevelSilent = iota
+	LevelNormal
+	LevelVerbose
+	LevelExtreme
+)
+
+var Level = LevelNormal
 
 func Header(msg string) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("\n%s%s%s%s\n", colorBold, colorCyan, msg, colorReset)
 }
 
 func Section(title, right string) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("\n%s%s▸ %s%s  %s%s%s\n", colorBold, colorCyan, title, colorReset, colorGray, right, colorReset)
 }
 
 func Detail(format string, args ...any) {
-	if !Verbose {
+	if Level < LevelVerbose {
 		return
 	}
 	fmt.Printf("%s%s%s\n", colorGray, fmt.Sprintf(format, args...), colorReset)
 }
 
+func Dim(format string, args ...any) {
+	if Level < LevelVerbose {
+		return
+	}
+	fmt.Printf("%s%s%s\n", colorFaint, fmt.Sprintf(format, args...), colorReset)
+}
+
+func Dump(format string, args ...any) {
+	if Level < LevelExtreme {
+		return
+	}
+	fmt.Printf("%s%s%s\n", colorFaint, fmt.Sprintf(format, args...), colorReset)
+}
+
 func Info(format string, args ...any) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("%s%s%s\n", colorGray, fmt.Sprintf(format, args...), colorReset)
 }
 
 func Success(format string, args ...any) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("%s%s%s\n", colorGreen, fmt.Sprintf(format, args...), colorReset)
 }
 
 func Warn(format string, args ...any) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("%s%s%s\n", colorYellow, fmt.Sprintf(format, args...), colorReset)
 }
 
@@ -50,10 +87,16 @@ func Err(format string, args ...any) {
 }
 
 func Plain(format string, args ...any) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf(format+"\n", args...)
 }
 
 func Step(name, detail string) {
+	if Level == LevelSilent {
+		return
+	}
 	fmt.Printf("  %s✓%s %s%s%s%s\n", colorGreen, colorReset, name, colorGray, detail, colorReset)
 }
 

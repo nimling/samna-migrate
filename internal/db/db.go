@@ -11,6 +11,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nimling/samna-migrate/internal/config"
+	"github.com/nimling/samna-migrate/internal/log"
 )
 
 type DB struct {
@@ -71,7 +72,11 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 		args = append(args, "-v", k+"="+vars[k])
 	}
 	args = append(args, "-c", "SET check_function_bodies = false")
-	args = append(args, "-c", "SET client_min_messages = warning")
+	noiseLevel := "warning"
+	if log.Level >= log.LevelExtreme {
+		noiseLevel = "notice"
+	}
+	args = append(args, "-c", "SET client_min_messages = "+noiseLevel)
 	if preSQL != "" {
 		args = append(args, "-c", preSQL)
 	}
@@ -81,6 +86,7 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 	if db.cfg.PGSSLMode != "" {
 		cmd.Env = append(cmd.Env, "PGSSLMODE="+db.cfg.PGSSLMode)
 	}
+	log.Dump("        psql %s", strings.Join(args, " "))
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &out
@@ -90,6 +96,13 @@ func (db *DB) RunPsqlFile(ctx context.Context, path string, preSQL string, vars 
 			return fmt.Errorf("%w\n%s", err, trimmed)
 		}
 		return err
+	}
+	if log.Level >= log.LevelExtreme {
+		for _, ln := range strings.Split(strings.TrimRight(out.String(), "\n"), "\n") {
+			if strings.TrimSpace(ln) != "" {
+				log.Dump("        psql| %s", ln)
+			}
+		}
 	}
 	return nil
 }

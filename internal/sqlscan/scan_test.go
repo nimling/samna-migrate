@@ -192,3 +192,14 @@ func TestScanLineNumbers(t *testing.T) {
 		t.Errorf("second object line = %d, want 3", objs[1].Line)
 	}
 }
+
+func TestScanCapturesSQL(t *testing.T) {
+	sql := "-- header\nCREATE TABLE x (id UUID PRIMARY KEY);\n"
+	o := find(Scan(sql), "table", "x")
+	if o == nil {
+		t.Fatal("table not found")
+	}
+	if o.SQL != "CREATE TABLE x (id UUID PRIMARY KEY);" {
+		t.Errorf("SQL = %q", o.SQL)
+	}
+}
