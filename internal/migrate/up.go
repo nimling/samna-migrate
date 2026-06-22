@@ -78,7 +78,10 @@ var upCmd = &cobra.Command{
 		hostName, _ := os.Hostname()
 		_ = hostName
 
-		groups := groupPending(pendings)
+		groups, err := groupPending(pendings, stepsCfg, dbDir)
+		if err != nil {
+			return err
+		}
 		rightEdge := 0
 		for _, g := range groups {
 			if w := 2 + len(g.name) + 2 + len(fmt.Sprintf("%d applied", len(g.files))); w > rightEdge {
@@ -101,17 +104,12 @@ var upCmd = &cobra.Command{
 		applied := 0
 		start := time.Now()
 		for _, g := range groups {
-			st := findStep(stepsCfg, g.slug)
-			name := g.name
-			if st != nil {
-				name = st.Name
-			}
-			log.Section(name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
-			logStepInternals(st)
+			log.Section(g.name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
+			logStepInternals(g.st)
 			headerShown := false
 			for _, p := range g.files {
 				fileStart := time.Now()
-				if err := apply.File(ctx, d, p, st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
+				if err := apply.File(ctx, d, p, g.st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
 					return fmt.Errorf("%s failed: %w", p.FilePath, err)
 				}
 				log.Step(p.FileName, time.Since(fileStart).Round(time.Millisecond).String(), rightEdge)
@@ -135,32 +133,27 @@ var upCmd = &cobra.Command{
 
 type pendingGroup struct {
 	name  string
-	slug  string
+	st    *steps.Step
 	files []apply.Pending
 }
 
-func groupPending(pendings []apply.Pending) []*pendingGroup {
+func groupPending(pendings []apply.Pending, stepsCfg *steps.Config, dbDir string) ([]*pendingGroup, error) {
 	groups := []*pendingGroup{}
 	index := map[string]*pendingGroup{}
 	for _, p := range pendings {
-		g := index[p.Slug]
+		st, err := apply.FileRel(stepsCfg, p.FilePath, dbDir)
+		if err != nil {
+			return nil, err
+		}
+		g := index[st.Name]
 		if g == nil {
-			g = &pendingGroup{name: p.StepName, slug: p.Slug}
-			index[p.Slug] = g
+			g = &pendingGroup{name: st.Name, st: st}
+			index[st.Name] = g
 			groups = append(groups, g)
 		}
 		g.files = append(g.files, p)
 	}
-	return groups
-}
-
-func findStep(cfg *steps.Config, slug string) *steps.Step {
-	for i := range cfg.Steps {
-		if cfg.Steps[i].Slug == slug {
-			return &cfg.Steps[i]
-		}
-	}
-	return nil
+	return groups, nil
 }
 
 func logStepInternals(st *steps.Step) {
