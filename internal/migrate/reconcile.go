@@ -24,14 +24,18 @@ var (
 var reconcileCmd = &cobra.Command{
 	Use:   "reconcile",
 	Short: "Audit the local tree against the deployed state, and prove .upgraded/ against a disposable postgres",
-	Long: `reconcile audits the local tree against the deployed state.
+	Long: `reconcile runs three analyses.
 
-The audit compares every local .sql file against the body stored in samna_migrate
-when it was applied. It reports added, dropped, changed, and reordered files,
-pinpoints the function, table, or statement that differs by file and line, and
-renders the difference as a git style diff. It never stops on the first
-difference unless --stop-one-error is given. Use -v for the diff hunks and -vv
-for the full file bodies.
+The file audit compares every local .sql file against the body stored in
+samna_migrate when it was applied. It reports added, dropped, changed, and
+reordered files, pinpoints the function, table, or statement that differs by
+file and line, and renders the difference as a git style diff. It never stops on
+the first difference unless --stop-one-error is given. Use -v for the diff hunks
+and -vv for the full file bodies.
+
+The live comparison introspects the target database directly and reports the
+functions, tables, views, types, and sequences your local files define that are
+missing from live, and the live objects no local file defines. It needs no docker.
 
 When .upgraded/ is present, or with --proof, reconcile also bootstraps a candidate
 tree into a disposable postgres container and records three verdicts:
@@ -72,8 +76,14 @@ runs the audit alone and needs no docker.`,
 		}
 		reconcile.Render(report)
 
+		liveRep, err := reconcile.LiveCompare(ctx, d, stepsCfg, dbDir)
+		if err != nil {
+			return err
+		}
+		reconcile.RenderLive(liveRep, cfg.PGDatabase+"@"+hostOrLocalhost(cfg))
+
 		if !reconcileProof && !upgradedPresent(stepsFile) {
-			log.Info("proof skipped, no .upgraded/ present. Pass --proof to bootstrap against a container")
+			log.Info("proof skipped, no .upgraded/ present. Pass --proof for the object for object container verdict")
 			return nil
 		}
 		return reconcile.Run(ctx, d, cfg, stepsCfg, dbDir, cli.Version, reconcile.Options{
