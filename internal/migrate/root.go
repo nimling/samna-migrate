@@ -139,8 +139,8 @@ func stdoutTTY() bool {
 
 const (
 	jumpAmp    = 2
-	animFrames = 44
-	animDelay  = 55 * time.Millisecond
+	animFrames = 18
+	animDelay  = 22 * time.Millisecond
 )
 
 var shimmer = []string{
@@ -282,7 +282,7 @@ func renderBannerFrame(grid [][]rune, w int, owner []int, segs []letterSeg, fram
 
 func printVersion(w int) {
 	v := cli.Version
-	pad := w - len([]rune(v))
+	pad := (w - len([]rune(v))) / 2
 	if pad < 0 {
 		pad = 0
 	}
