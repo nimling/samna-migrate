@@ -8,7 +8,7 @@ inputs:
   smig-version:
     description: 'Pinned smig CLI version'
     required: false
-    default: '1.1.5'
+    default: '1.1.6'
   command:
     description: 'smig command to run: up, check, down, upgrade, merge, reconcile, lock, rebase, stat'
     required: true
