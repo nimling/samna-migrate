@@ -29,21 +29,10 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 	}
 
 	if !force {
-		m, err := reconcile.ReadManifest(upgradedDir)
-		if err != nil {
-			return fmt.Errorf(".upgraded/ carries no reconcile proof. Run smig reconcile first or pass --force")
-		}
-		sha, err := reconcile.TreeSha(upgradedDir)
-		if err != nil {
+		log.Header("verify .upgraded/ tree against live before applying")
+		if err := reconcile.Run(ctx, d, cfg, stepsCfg, dbDir, toolVersion, reconcile.Options{}); err != nil {
 			return err
 		}
-		if m.UpgradedSha != sha {
-			return fmt.Errorf("reconcile proof is stale, .upgraded/ changed after the last smig reconcile. Rerun smig reconcile or pass --force")
-		}
-		if !m.AllPassed() {
-			return fmt.Errorf("reconcile proof records a failed verdict. Fix the tree, rerun smig reconcile, or pass --force")
-		}
-		log.Success("reconcile proof accepted, verified at %s against %s", m.VerifiedAt, m.SourceDatabase)
 	}
 
 	sourceRoot := filepath.Dir(cfg.StepsFile)

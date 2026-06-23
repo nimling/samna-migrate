@@ -12,7 +12,7 @@ smig upgrade    Walk the samna_migrate schema chain and reconcile state. Local o
 smig check      Preflight only. No writes. Reports drift.
 smig stat       Print current state and per step file counts.
 smig merge      Rebase live SQL into .upgraded/; --apply moves it in; --revert restores a snapshot.
-smig reconcile  Audit the local tree against the deployed state, then prove .upgraded/ in a container.
+smig reconcile  Compare the local database folder against the live server: file audit, live diagnostic, container build and diff.
 smig lint       Static checks on every step file. No database needed.
 smig lock       Write the applied ledger to samna_migrate.lock.json for lint to guard.
 smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
@@ -25,15 +25,13 @@ Every successful apply records both the sha256 and the full deployed `.sql` body
 
 ## Reconcile
 
-`smig reconcile` runs the file audit and the live comparison every time, and runs the container proof when it is needed.
+`smig reconcile` compares the local database folder, `--db-dir` (default `./database`), against the live server in depth. It runs three analyses and never lets one stop the others.
 
 The file audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, groups the results by class as a compact aligned list colored by status, and uses the SQL scanner to name the exact function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. Normal output lists the per object changes; `-v` adds the diff hunks; `-vv` dumps the full bodies on both sides. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
 
-The live comparison introspects the target database directly and reports the functions, tables, views, types, and sequences your local files define that are missing from live, with their file and line, and the live objects no local file defines. It compares names across the step schemas, needs no docker, and always runs.
+The live diagnostic introspects the target server directly and reports the functions, tables, views, types, and sequences your local files define that are missing from live, with their file and line, and the live objects no local file defines. It compares names across the step schemas and needs no docker.
 
-The proof builds a candidate source tree from `--db-dir`, overlaying `.upgraded/` when it is present, bootstraps it into a disposable postgres container started via docker, and records three verdicts: `bootstrap` that the candidate builds a fresh database without errors, `equality` that the fresh database matches the live database object for object across types, tables, constraints, indexes, views, functions, triggers, sequences, grants, and comments, and `determinism` that a second independent bootstrap matches the first. All three passing writes `.upgraded/reconcile.json`, the proof `smig merge --apply` requires unless `--force` is given.
-
-The proof runs when `.upgraded/` is present, the merge workflow, or when `--proof` forces it on a bare tree. Without either, reconcile runs the audit and the live comparison alone and needs no docker. `--dry-run` reports verdicts without writing the proof. `--keep` leaves the container and candidate tree in place for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
+The container comparison starts a local docker postgres, applies every local file from `--db-dir` into it, introspects the produced objects, and compares them object for object against the live server, reporting what is in live but not produced by the files, what the files produce that is missing from live, and what differs. The files apply with their step `pre` and `vars` expanded from the environment, so run reconcile with the deploy env; a build failure is reported without stopping the other two analyses. `--no-container` skips this phase. `--keep` leaves the container and candidate tree for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
 
 ## Drift guarding
 

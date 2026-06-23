@@ -174,52 +174,41 @@ func CompareInventories(want, got map[string]string) *InventoryDiff {
 	return diff
 }
 
-func reportDiff(diff *InventoryDiff, live, candidate map[string]string) {
-	const listLimit = 40
-	const bodyLimit = 16
+func RenderContainerDiff(c *ContainerDiff) {
+	if c.Diff.Empty() {
+		log.Success("container matches live: every object the files produce matches the server")
+		return
+	}
+	log.Info("only in live %d  only in files %d  differs %d",
+		len(c.Diff.Missing), len(c.Diff.Extra), len(c.Diff.Different))
+	reportDiff(c.Diff, c.live, c.cand)
+}
 
-	list := func(label, mark string, items []string) {
+func reportDiff(diff *InventoryDiff, live, candidate map[string]string) {
+	group := func(label string, items []string, line func(string, ...any)) {
 		if len(items) == 0 {
 			return
 		}
-		log.Warn("%s: %d", label, len(items))
-		for i, it := range items {
-			if i == listLimit {
-				log.Plain("    and %d more", len(items)-listLimit)
-				break
-			}
-			log.Plain("    %s %s", mark, it)
+		log.Info("%s: %d", label, len(items))
+		for _, it := range items {
+			line("  %s", it)
 		}
 	}
-
-	list("present in live but missing from the candidate", "-", diff.Missing)
-	list("present in the candidate but missing from live", "+", diff.Extra)
+	group("in live, not produced by the files", diff.Missing, log.Warn)
+	group("produced by the files, not in live", diff.Extra, log.Success)
 
 	if len(diff.Different) > 0 {
-		log.Warn("definition differs between live and candidate: %d", len(diff.Different))
-		for i, it := range diff.Different {
-			if i == listLimit {
-				log.Plain("    and %d more", len(diff.Different)-listLimit)
-				break
-			}
-			log.Plain("    ~ %s", it)
-			onlyLive, onlyCand := lineDelta(live[it], candidate[it])
-			shown := 0
-			for _, ln := range onlyLive {
-				if shown == bodyLimit {
-					log.Plain("        ... body delta truncated")
-					break
+		log.Info("definition differs: %d", len(diff.Different))
+		for _, it := range diff.Different {
+			log.Warn("  %s", it)
+			if log.Level >= log.LevelVerbose {
+				onlyLive, onlyCand := lineDelta(live[it], candidate[it])
+				for _, ln := range onlyLive {
+					log.DiffLine('-', ln)
 				}
-				log.Plain("        live - %s", ln)
-				shown++
-			}
-			for _, ln := range onlyCand {
-				if shown == bodyLimit {
-					log.Plain("        ... body delta truncated")
-					break
+				for _, ln := range onlyCand {
+					log.DiffLine('+', ln)
 				}
-				log.Plain("        cand + %s", ln)
-				shown++
 			}
 		}
 	}

@@ -180,6 +180,55 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	return nil
 }
 
+type ContainerDiff struct {
+	Diff *InventoryDiff
+	live map[string]string
+	cand map[string]string
+}
+
+func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
+	candidateDir, candSteps, err := materializeCandidate(stepsCfg, cfg.StepsFile, dbDir, "")
+	if err != nil {
+		return nil, err
+	}
+	if !opts.Keep {
+		defer os.RemoveAll(candidateDir)
+	}
+	candStepsCfg, err := steps.Load(candSteps)
+	if err != nil {
+		return nil, err
+	}
+	image := opts.Image
+	if image == "" {
+		image = imageForServer(ctx, live)
+	}
+	log.Info("building %s into a disposable %s", dbDir, image)
+	cont, cand, err := startContainer(ctx, cfg, image)
+	if err != nil {
+		return nil, err
+	}
+	defer cand.Close()
+	if !opts.Keep {
+		defer stopContainer(cont.Name)
+	}
+	if err := bootstrapCandidate(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
+		return nil, fmt.Errorf("build failed: %w", err)
+	}
+	schemas := schemaUnion(stepsCfg)
+	liveInv, err := Inventory(ctx, live, schemas)
+	if err != nil {
+		return nil, err
+	}
+	candInv, err := Inventory(ctx, cand, schemas)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Keep {
+		log.Plain("container kept: %s on port %d, candidate tree at %s", cont.Name, cont.Port, candidateDir)
+	}
+	return &ContainerDiff{Diff: CompareInventories(liveInv, candInv), live: liveInv, cand: candInv}, nil
+}
+
 func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) error {
 	if err := schema.Ensure(ctx, cand); err != nil {
 		return err
@@ -201,10 +250,10 @@ func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config
 	if err != nil {
 		return err
 	}
-	log.Info("%d files to apply", len(pendings))
+	log.Detail("%d files to apply", len(pendings))
 	for _, p := range pendings {
 		st, _ := apply.FileRel(candStepsCfg, p.FilePath, candidateDir)
-		log.Plain("  %s", p.FilePath)
+		log.Detail("  %s", p.FilePath)
 		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase); err != nil {
 			return fmt.Errorf("%s: %w", p.FilePath, err)
 		}
