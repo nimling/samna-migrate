@@ -44,7 +44,9 @@ Requires --anthropic-key or the ANTHROPIC_API_KEY env var. Refuses to run in CI.
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
-			_ = config.LoadDotEnv(envFile)
+			if err := config.LoadDotEnv(envFile); err != nil {
+				return err
+			}
 		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile

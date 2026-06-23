@@ -30,7 +30,9 @@ var lintCmd = &cobra.Command{
 Errors exit nonzero. --strict treats warnings as errors.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if envFile != "" {
-			_ = config.LoadDotEnv(envFile)
+			if err := config.LoadDotEnv(envFile); err != nil {
+				return err
+			}
 		}
 		stepsCfg, err := steps.Load(stepsFile)
 		if err != nil {

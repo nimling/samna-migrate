@@ -17,7 +17,9 @@ var checkCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
-			_ = config.LoadDotEnv(envFile)
+			if err := config.LoadDotEnv(envFile); err != nil {
+				return err
+			}
 		}
 		cfg := config.FromEnv()
 		d, err := db.Open(ctx, cfg)

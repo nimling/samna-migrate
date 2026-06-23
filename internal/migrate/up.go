@@ -26,7 +26,7 @@ var upCmd = &cobra.Command{
 		ctx := cmd.Context()
 		if envFile != "" {
 			if err := config.LoadDotEnv(envFile); err != nil {
-				log.Warn("env: %v", err)
+				return err
 			}
 		}
 		cfg := config.FromEnv()

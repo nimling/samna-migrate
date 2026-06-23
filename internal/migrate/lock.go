@@ -20,7 +20,9 @@ and smig merge --apply refresh the lockfile automatically when it exists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
-			_ = config.LoadDotEnv(envFile)
+			if err := config.LoadDotEnv(envFile); err != nil {
+				return err
+			}
 		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
