@@ -13,17 +13,19 @@ import (
 const renameThreshold = 0.8
 
 type ObjRef struct {
-	Kind string
-	Name string
-	File string
-	Line int
-	Sig  string
-	Body string
+	Kind  string
+	Name  string
+	Table string
+	File  string
+	Line  int
+	Sig   string
+	Body  string
 }
 
 type ObjChange struct {
 	Kind    string
 	Name    string
+	Table   string
 	OldName string
 	From    *ObjRef
 	To      *ObjRef
@@ -99,7 +101,7 @@ func analyzeObjects(deployed, local map[string]string) *ObjReport {
 			if similar(d.Body, a.Body) >= renameThreshold {
 				usedAdd[ai] = true
 				matched = true
-				ch := ObjChange{Kind: d.Kind, Name: a.Name, OldName: d.Name, From: refOf(d), To: refOf(a), Reasons: []string{"renamed"}}
+				ch := ObjChange{Kind: d.Kind, Name: a.Name, Table: a.Table, OldName: d.Name, From: refOf(d), To: refOf(a), Reasons: []string{"renamed"}}
 				if d.Body != a.Body {
 					ch.Reasons = append(ch.Reasons, "content")
 					ch.Hunks = Hunkify(Diff(splitLines(d.Body), splitLines(a.Body)), contextLines)
@@ -109,14 +111,14 @@ func analyzeObjects(deployed, local map[string]string) *ObjReport {
 			}
 		}
 		if !matched {
-			rep.Changes = append(rep.Changes, ObjChange{Kind: d.Kind, Name: d.Name, From: refOf(d), Reasons: []string{"deleted"}})
+			rep.Changes = append(rep.Changes, ObjChange{Kind: d.Kind, Name: d.Name, Table: d.Table, From: refOf(d), Reasons: []string{"deleted"}})
 		}
 	}
 	for ai, a := range added {
 		if usedAdd[ai] {
 			continue
 		}
-		rep.Changes = append(rep.Changes, ObjChange{Kind: a.Kind, Name: a.Name, To: refOf(a), Reasons: []string{"added"}})
+		rep.Changes = append(rep.Changes, ObjChange{Kind: a.Kind, Name: a.Name, Table: a.Table, To: refOf(a), Reasons: []string{"added"}})
 	}
 
 	sort.Slice(rep.Changes, func(i, j int) bool {
@@ -144,7 +146,7 @@ func pairChange(d, l ObjRef) (ObjChange, bool) {
 	if len(reasons) == 0 {
 		return ObjChange{}, false
 	}
-	ch := ObjChange{Kind: d.Kind, Name: l.Name, From: refOf(d), To: refOf(l), Reasons: reasons}
+	ch := ObjChange{Kind: d.Kind, Name: l.Name, Table: l.Table, From: refOf(d), To: refOf(l), Reasons: reasons}
 	if d.Body != l.Body {
 		ch.Hunks = Hunkify(Diff(splitLines(d.Body), splitLines(l.Body)), contextLines)
 	}
@@ -156,26 +158,45 @@ func refOf(r ObjRef) *ObjRef {
 	return &c
 }
 
+var createKinds = map[string]bool{
+	"function": true, "table": true, "view": true, "type": true, "sequence": true,
+	"trigger": true, "index": true, "domain": true, "policy": true, "schema": true,
+}
+
 func buildObjIndex(files map[string]string) map[string][]ObjRef {
 	idx := map[string][]ObjRef{}
 	for path, content := range files {
 		for _, o := range sqlscan.Scan(content) {
-			if o.Name == "" {
+			if o.Name == "" || !createKinds[o.Kind] {
 				continue
 			}
 			name := normName(o.Name)
-			key := o.Kind + "\x00" + name
+			table := objTable(o)
+			key := o.Kind + "\x00" + name + "\x00" + table
 			idx[key] = append(idx[key], ObjRef{
-				Kind: o.Kind,
-				Name: name,
-				File: path,
-				Line: o.Line,
-				Sig:  sigOf(o),
-				Body: normalize(o.SQL),
+				Kind:  o.Kind,
+				Name:  name,
+				Table: table,
+				File:  path,
+				Line:  o.Line,
+				Sig:   sigOf(o),
+				Body:  normalize(o.SQL),
 			})
 		}
 	}
 	return idx
+}
+
+func objTable(o sqlscan.Object) string {
+	if o.Kind != "trigger" && o.Kind != "index" && o.Kind != "policy" {
+		return ""
+	}
+	for _, s := range o.Stats {
+		if s.Key == "on" {
+			return normName(s.Val)
+		}
+	}
+	return ""
 }
 
 func mergedObjKeys(a, b map[string][]ObjRef) []string {

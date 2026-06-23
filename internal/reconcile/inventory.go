@@ -35,7 +35,7 @@ var inventoryQueries = []string{
 	        string_agg(a.attname || ' ' || format_type(a.atttypid, a.atttypmod)
 	            || CASE WHEN a.attnotnull THEN ' not null' ELSE '' END
 	            || CASE WHEN d.adbin IS NOT NULL THEN ' default ' || pg_get_expr(d.adbin, d.adrelid) ELSE '' END,
-	            E'\n' ORDER BY a.attnum)
+	            E'\n' ORDER BY a.attname)
 	 FROM pg_class c
 	 JOIN pg_namespace n ON n.oid = c.relnamespace
 	 JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
@@ -132,6 +132,44 @@ func Inventory(ctx context.Context, d *db.DB, schemas []string) (map[string]stri
 				return nil, err
 			}
 			out[identity] = def
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
+}
+
+func ExtensionObjects(ctx context.Context, d *db.DB, schemas []string) (map[string]string, error) {
+	out := map[string]string{}
+	queries := []string{
+		`SELECT 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')', e.extname
+		 FROM pg_depend dep
+		 JOIN pg_extension e ON e.oid = dep.refobjid AND dep.refclassid = 'pg_extension'::regclass
+		 JOIN pg_proc p ON dep.classid = 'pg_proc'::regclass AND dep.objid = p.oid
+		 JOIN pg_namespace n ON n.oid = p.pronamespace
+		 WHERE dep.deptype = 'e' AND n.nspname = ANY($1)`,
+
+		`SELECT 'type ' || n.nspname || '.' || t.typname, e.extname
+		 FROM pg_depend dep
+		 JOIN pg_extension e ON e.oid = dep.refobjid AND dep.refclassid = 'pg_extension'::regclass
+		 JOIN pg_type t ON dep.classid = 'pg_type'::regclass AND dep.objid = t.oid
+		 JOIN pg_namespace n ON n.oid = t.typnamespace
+		 WHERE dep.deptype = 'e' AND n.nspname = ANY($1)`,
+	}
+	for _, q := range queries {
+		rows, err := d.Pool.Query(ctx, q, schemas)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var identity, ext string
+			if err := rows.Scan(&identity, &ext); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			out[identity] = ext
 		}
 		rows.Close()
 		if err := rows.Err(); err != nil {

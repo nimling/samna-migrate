@@ -11,19 +11,30 @@ import (
 	"github.com/nimling/samna-migrate/internal/log"
 )
 
+type ColumnChange struct {
+	Name   string `json:"name"`
+	Change string `json:"change"`
+	Live   string `json:"live,omitempty"`
+	Built  string `json:"built,omitempty"`
+}
+
 type JointObj struct {
-	Kind       string   `json:"kind"`
-	Name       string   `json:"name"`
-	RenamedTo  string   `json:"renamed_to,omitempty"`
-	Signature  string   `json:"signature,omitempty"`
-	Reasons    []string `json:"reasons"`
-	Remediation string  `json:"remediation,omitempty"`
-	File       string   `json:"file,omitempty"`
-	Line       int      `json:"line,omitempty"`
-	MovedFrom  string   `json:"moved_from,omitempty"`
-	Commit     string   `json:"deployed_commit,omitempty"`
-	DesiredSQL string   `json:"desired_sql,omitempty"`
-	CurrentDDL string   `json:"current_live_ddl,omitempty"`
+	Kind           string         `json:"kind"`
+	Name           string         `json:"name"`
+	Table          string         `json:"table,omitempty"`
+	RenamedTo      string         `json:"renamed_to,omitempty"`
+	Signature      string         `json:"signature,omitempty"`
+	Reasons        []string       `json:"reasons"`
+	Remediation    string         `json:"remediation,omitempty"`
+	Destructive    bool           `json:"destructive,omitempty"`
+	OwnerExtension string         `json:"owner_extension,omitempty"`
+	File           string         `json:"file,omitempty"`
+	Line           int            `json:"line,omitempty"`
+	MovedFrom      string         `json:"moved_from,omitempty"`
+	Commit         string         `json:"deployed_commit,omitempty"`
+	Columns        []ColumnChange `json:"columns,omitempty"`
+	DesiredSQL     string         `json:"desired_sql,omitempty"`
+	CurrentDDL     string         `json:"current_live_ddl,omitempty"`
 
 	sourceHunks []Hunk
 	liveHunks   []Hunk
@@ -37,26 +48,35 @@ type JointFile struct {
 }
 
 type Joint struct {
-	Database     string       `json:"database"`
-	ContainerRan bool         `json:"container_ran"`
-	GitRepo      bool         `json:"git_repo"`
-	ObjectsSame  int          `json:"objects_unchanged"`
-	Objects      []JointObj   `json:"objects"`
-	Files        []JointFile  `json:"files"`
-	BuildErrors  []BuildError `json:"build_errors,omitempty"`
+	Database          string       `json:"database"`
+	ContainerRan      bool         `json:"container_ran"`
+	ContainerComplete bool         `json:"container_complete"`
+	GitRepo           bool         `json:"git_repo"`
+	ObjectsSame       int          `json:"objects_unchanged"`
+	ExtensionsIgnored int          `json:"extension_objects_ignored"`
+	Objects           []JointObj   `json:"objects"`
+	Files             []JointFile  `json:"files"`
+	BuildErrors       []BuildError `json:"build_errors,omitempty"`
 }
 
 func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerDiff, commits map[string]string, dbDir string) *Joint {
-	j := &Joint{Database: dbLabel, ContainerRan: cdiff != nil, GitRepo: git.IsRepo(dbDir), ObjectsSame: obj.Same}
+	complete := cdiff != nil && len(cdiff.BuildErrors) == 0
+	j := &Joint{
+		Database:          dbLabel,
+		ContainerRan:      cdiff != nil,
+		ContainerComplete: complete,
+		GitRepo:           git.IsRepo(dbDir),
+		ObjectsSame:       obj.Same,
+	}
 
 	byKey := map[string]*JointObj{}
 	var order []string
-	get := func(kind, name string) *JointObj {
-		key := kind + ":" + name
+	get := func(kind, name, table string) *JointObj {
+		key := kind + ":" + name + ":" + table
 		if jo, ok := byKey[key]; ok {
 			return jo
 		}
-		jo := &JointObj{Kind: kind, Name: name}
+		jo := &JointObj{Kind: kind, Name: name, Table: table}
 		byKey[key] = jo
 		order = append(order, key)
 		return jo
@@ -64,7 +84,7 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 
 	for i := range obj.Changes {
 		ch := &obj.Changes[i]
-		jo := get(ch.Kind, ch.Name)
+		jo := get(ch.Kind, ch.Name, ch.Table)
 		jo.Reasons = append(jo.Reasons, ch.Reasons...)
 		jo.sourceHunks = ch.Hunks
 		if ch.OldName != "" {
@@ -86,7 +106,7 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 			if !ok {
 				return nil
 			}
-			jo := get(kind, name)
+			jo := get(kind, name, "")
 			jo.Reasons = append(jo.Reasons, reason)
 			jo.Signature = id
 			if v, ok := cdiff.live[id]; ok {
@@ -101,14 +121,23 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 			return jo
 		}
 		for _, id := range cdiff.Diff.Different {
-			if jo := liveObj(id, "live differs"); jo != nil {
-				jo.liveHunks = Hunkify(Diff(splitLines(cdiff.live[id]), splitLines(cdiff.cand[id])), contextLines)
-				if jo.DesiredSQL == "" {
-					jo.DesiredSQL = cdiff.cand[id]
-				}
+			jo := liveObj(id, "live differs")
+			if jo == nil {
+				continue
+			}
+			if jo.Kind == "table" {
+				jo.Columns = columnChanges(cdiff.live[id], cdiff.cand[id])
+			}
+			jo.liveHunks = Hunkify(Diff(splitLines(cdiff.live[id]), splitLines(cdiff.cand[id])), contextLines)
+			if jo.DesiredSQL == "" {
+				jo.DesiredSQL = cdiff.cand[id]
 			}
 		}
 		for _, id := range cdiff.Diff.Missing {
+			if cdiff.extObjs[id] != "" {
+				j.ExtensionsIgnored++
+				continue
+			}
 			liveObj(id, "only in live")
 		}
 		for _, id := range cdiff.Diff.Extra {
@@ -121,7 +150,9 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 
 	for _, key := range order {
 		jo := byKey[key]
-		jo.Remediation = remediation(jo, j.ContainerRan)
+		jo.Reasons = dedupe(jo.Reasons)
+		jo.Remediation = remediation(jo, j.ContainerRan, complete)
+		jo.Destructive = jo.Remediation == "drop" || hasDropColumn(jo.Columns)
 		j.Objects = append(j.Objects, *jo)
 	}
 	sort.Slice(j.Objects, func(a, b int) bool {
@@ -146,7 +177,7 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 	return j
 }
 
-func remediation(jo *JointObj, containerRan bool) string {
+func remediation(jo *JointObj, containerRan, containerComplete bool) string {
 	has := func(r string) bool {
 		for _, x := range jo.Reasons {
 			if x == r {
@@ -157,6 +188,9 @@ func remediation(jo *JointObj, containerRan bool) string {
 	}
 	switch {
 	case has("only in live"):
+		if !containerComplete {
+			return "review"
+		}
 		return "drop"
 	case has("produced, not in live"):
 		return "create"
@@ -177,6 +211,62 @@ func remediation(jo *JointObj, containerRan bool) string {
 	return "none"
 }
 
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func tableColumns(s string) map[string]string {
+	m := map[string]string{}
+	for _, ln := range strings.Split(s, "\n") {
+		ln = strings.TrimRight(ln, " \t")
+		if ln == "" {
+			continue
+		}
+		if i := strings.IndexByte(ln, ' '); i >= 0 {
+			m[ln[:i]] = ln[i+1:]
+		} else {
+			m[ln] = ""
+		}
+	}
+	return m
+}
+
+func columnChanges(live, built string) []ColumnChange {
+	lm, bm := tableColumns(live), tableColumns(built)
+	var out []ColumnChange
+	for name, bdef := range bm {
+		if ldef, ok := lm[name]; !ok {
+			out = append(out, ColumnChange{Name: name, Change: "add", Built: bdef})
+		} else if ldef != bdef {
+			out = append(out, ColumnChange{Name: name, Change: "alter", Live: ldef, Built: bdef})
+		}
+	}
+	for name, ldef := range lm {
+		if _, ok := bm[name]; !ok {
+			out = append(out, ColumnChange{Name: name, Change: "drop", Live: ldef})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func hasDropColumn(cols []ColumnChange) bool {
+	for _, c := range cols {
+		if c.Change == "drop" {
+			return true
+		}
+	}
+	return false
+}
+
 func WriteJSON(w io.Writer, j *Joint) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -193,6 +283,12 @@ func RenderJoint(j *Joint) {
 	}
 	log.Info("objects %d changed, %d unchanged   files %d   build errors %d   remediations %d",
 		len(j.Objects), j.ObjectsSame, len(j.Files), len(j.BuildErrors), remed)
+	if j.ContainerRan && !j.ContainerComplete {
+		log.Warn("container build incomplete, %d files failed: only-in-live verdicts are downgraded to review", len(j.BuildErrors))
+	}
+	if j.ExtensionsIgnored > 0 {
+		log.Detail("ignored %d extension owned objects on live", j.ExtensionsIgnored)
+	}
 	if len(j.Objects) == 0 && len(j.Files) == 0 && len(j.BuildErrors) == 0 {
 		log.Success("no drift: the local tree, the deployed bodies, and the live server all agree")
 		return
@@ -202,6 +298,9 @@ func RenderJoint(j *Joint) {
 		name := o.Name
 		if o.RenamedTo != "" {
 			name = o.Name + " (renamed)"
+		}
+		if o.Table != "" {
+			name = o.Name + " on " + o.Table
 		}
 		loc := o.File
 		if o.Line > 0 {
@@ -214,17 +313,31 @@ func RenderJoint(j *Joint) {
 		if o.Remediation != "" && o.Remediation != "none" {
 			tail += "  [" + o.Remediation + " on live]"
 		}
+		if o.Destructive {
+			tail += "  destructive"
+		}
 		if o.Commit != "" {
 			tail += "  (deployed " + shortCommit(o.Commit) + ")"
 		}
 		jointColor(o, fmt.Sprintf("  %s %s  %s  %s", o.Kind, name, loc, tail))
+		for _, c := range o.Columns {
+			switch c.Change {
+			case "add":
+				log.DiffLine('+', "    "+c.Name+" "+c.Built)
+			case "drop":
+				log.DiffLine('-', "    "+c.Name+" "+c.Live)
+			case "alter":
+				log.DiffLine('-', "    "+c.Name+" "+c.Live)
+				log.DiffLine('+', "    "+c.Name+" "+c.Built)
+			}
+		}
+		if len(o.Columns) == 0 && len(o.liveHunks) > 0 {
+			log.Detail("    live vs built")
+			renderHunks(o.liveHunks)
+		}
 		if len(o.sourceHunks) > 0 {
 			log.Detail("    file change")
 			renderHunks(o.sourceHunks)
-		}
-		if len(o.liveHunks) > 0 {
-			log.Detail("    live vs built")
-			renderHunks(o.liveHunks)
 		}
 	}
 

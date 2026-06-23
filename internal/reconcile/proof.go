@@ -191,6 +191,7 @@ type ContainerDiff struct {
 	live        map[string]string
 	cand        map[string]string
 	index       map[string]LiveDiff
+	extObjs     map[string]string
 }
 
 func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
@@ -243,12 +244,17 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 		log.Plain("container kept: %s on port %d, candidate tree at %s", cont.Name, cont.Port, candidateDir)
 	}
 	index, _ := collectLocalObjects(stepsCfg, dbDir)
+	extObjs, err := ExtensionObjects(ctx, live, schemas)
+	if err != nil {
+		return nil, err
+	}
 	return &ContainerDiff{
 		Diff:        CompareInventories(liveInv, candInv),
 		BuildErrors: buildErrs,
 		live:        liveInv,
 		cand:        candInv,
 		index:       index,
+		extObjs:     extObjs,
 	}, nil
 }
 
