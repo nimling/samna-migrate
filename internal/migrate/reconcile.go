@@ -1,12 +1,10 @@
 package migrate
 
 import (
-	"context"
-	"strings"
+	"os"
 
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
-	"github.com/nimling/samna-migrate/internal/git"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/reconcile"
 	"github.com/nimling/samna-migrate/internal/steps"
@@ -19,32 +17,31 @@ var (
 	reconcileImage       string
 	reconcileStopOnError bool
 	reconcileNoContainer bool
+	reconcileJSON        bool
 )
 
 var reconcileCmd = &cobra.Command{
 	Use:   "reconcile",
 	Short: "Compare the local database folder against the live server in depth",
 	Long: `reconcile compares the local database folder, --db-dir (default ./database),
-against the live server and where it was deployed. It runs four analyses and
-never lets one stop the others.
+against the live server and where it was deployed, and produces one joint diff.
 
-File audit compares every local .sql file against the body stored in
-samna_migrate when it was applied, and classifies each file as added, dropped,
-changed, or reordered. Use --stop-one-error to halt at the first difference.
+It runs four analyses and never lets one stop the others: the file audit (each
+local .sql against the body stored at apply time), the object analysis (every
+function, table, view, type, and sequence tracked globally for moves, renames,
+signature, content, and position changes), the git locate (the real git diff of
+each changed file since the commit it was deployed from, when the folder is a git
+repo), and the container comparison (build every local file into a fresh docker
+postgres and diff the produced objects against the live server).
 
-Object analysis tracks every function, table, view, type, and sequence globally
-across files and reports whether it moved to another file, was renamed, changed
-signature, changed content, changed position, was added, or deleted, rendered as
-a git style diff with file and line.
+The results are merged into a single report keyed by object. Each entry carries
+the remediation direction (create, drop, or update on live), the live signature,
+the desired SQL, and the current live DDL, so the diff is enough to write the SQL
+that closes the gap. Pass --json to emit the full structured report.
 
-Git locate, when the folder is a git repo, shows the real git diff of each
-changed file between the commit it was deployed from and the working tree.
-
-Container comparison starts a local docker postgres, applies every local file
-into it resiliently, and compares the produced objects against the live server.
-Pass --no-container to skip it. The files apply with their step pre and vars
-expanded from the environment, so run reconcile with the deploy env; a build
-failure is reported without stopping the other analyses.`,
+Pass --no-container to skip the docker phase. The container build applies files
+with their step pre and vars expanded from the environment, so run reconcile with
+the deploy env; a build failure is reported without stopping the other analyses.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
@@ -68,89 +65,46 @@ failure is reported without stopping the other analyses.`,
 			return err
 		}
 
-		report, err := reconcile.Audit(ctx, d, stepsCfg, dbDir, reconcileStopOnError)
+		if reconcileJSON {
+			log.Level = log.LevelSilent
+		}
+
+		audit, err := reconcile.Audit(ctx, d, stepsCfg, dbDir, reconcileStopOnError)
 		if err != nil {
 			return err
 		}
-		reconcile.Render(report)
-
 		objRep, err := reconcile.AnalyzeObjects(ctx, d, stepsCfg, dbDir)
 		if err != nil {
 			return err
 		}
-		reconcile.RenderObjects(objRep)
-
-		if err := gitLocate(ctx, d, dbDir, report); err != nil {
+		commits, err := reconcile.DeployedCommits(ctx, d)
+		if err != nil {
 			return err
 		}
 
-		if reconcileNoContainer {
-			return nil
+		var cdiff *reconcile.ContainerDiff
+		if !reconcileNoContainer {
+			if !reconcile.DockerPresent() {
+				log.Err("docker is required for the container comparison. install docker or pass --no-container")
+			} else {
+				cdiff, err = reconcile.CompareToLive(ctx, d, cfg, stepsCfg, dbDir, cli.Version, reconcile.Options{
+					Keep:  reconcileKeep,
+					Image: reconcileImage,
+				})
+				if err != nil {
+					log.Err("container comparison failed: %v", err)
+					cdiff = nil
+				}
+			}
 		}
-		log.Header("container comparison: local files built and diffed against live")
-		diff, err := reconcile.CompareToLive(ctx, d, cfg, stepsCfg, dbDir, cli.Version, reconcile.Options{
-			Keep:  reconcileKeep,
-			Image: reconcileImage,
-		})
-		if err != nil {
-			log.Err("container comparison failed: %v", err)
-			return nil
+
+		joint := reconcile.BuildJoint(cfg.PGDatabase+"@"+hostOrLocalhost(cfg), audit, objRep, cdiff, commits, dbDir)
+		if reconcileJSON {
+			return reconcile.WriteJSON(os.Stdout, joint)
 		}
-		reconcile.RenderContainerDiff(diff)
+		reconcile.RenderJoint(joint)
 		return nil
 	},
-}
-
-func gitLocate(ctx context.Context, d *db.DB, dbDir string, report *reconcile.Report) error {
-	if !git.IsRepo(dbDir) {
-		return nil
-	}
-	commits, err := reconcile.DeployedCommits(ctx, d)
-	if err != nil {
-		return err
-	}
-	printed := false
-	for _, f := range report.Files {
-		if f.Class != reconcile.Changed {
-			continue
-		}
-		commit := commits[f.FilePath]
-		if commit == "" {
-			continue
-		}
-		diff := git.DiffSince(dbDir, commit, f.FilePath)
-		if strings.TrimSpace(diff) == "" {
-			continue
-		}
-		if !printed {
-			log.Header("git locate: file changes since the deployed commit")
-			printed = true
-		}
-		log.Section(f.FilePath, shortSha(commit), 0)
-		renderGitDiff(diff)
-		for _, r := range git.Renames(dbDir, commit, f.FilePath) {
-			log.Detail("      %s", r)
-		}
-	}
-	return nil
-}
-
-func renderGitDiff(diff string) {
-	for _, ln := range strings.Split(diff, "\n") {
-		switch {
-		case strings.HasPrefix(ln, "+++"), strings.HasPrefix(ln, "---"),
-			strings.HasPrefix(ln, "diff "), strings.HasPrefix(ln, "index "):
-			log.Detail("%s", ln)
-		case strings.HasPrefix(ln, "@@"):
-			log.DiffHunk(ln)
-		case strings.HasPrefix(ln, "+"):
-			log.DiffLine('+', ln[1:])
-		case strings.HasPrefix(ln, "-"):
-			log.DiffLine('-', ln[1:])
-		default:
-			log.DiffLine(' ', strings.TrimPrefix(ln, " "))
-		}
-	}
 }
 
 func init() {
@@ -158,5 +112,6 @@ func init() {
 	reconcileCmd.Flags().StringVar(&reconcileImage, "image", "", "Postgres docker image, defaults to the live server major version")
 	reconcileCmd.Flags().BoolVar(&reconcileStopOnError, "stop-one-error", false, "Stop the file audit at the first difference instead of reporting all")
 	reconcileCmd.Flags().BoolVar(&reconcileNoContainer, "no-container", false, "Skip the container comparison, run the file audit, object analysis, and git locate only")
+	reconcileCmd.Flags().BoolVar(&reconcileJSON, "json", false, "Emit the full joint report as JSON for use in another session")
 	rootCmd.AddCommand(reconcileCmd)
 }

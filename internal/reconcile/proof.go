@@ -181,8 +181,8 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 }
 
 type BuildError struct {
-	File string
-	Err  string
+	File string `json:"file"`
+	Err  string `json:"error"`
 }
 
 type ContainerDiff struct {
@@ -191,17 +191,6 @@ type ContainerDiff struct {
 	live        map[string]string
 	cand        map[string]string
 	index       map[string]LiveDiff
-}
-
-func (c *ContainerDiff) loc(identity string) string {
-	kind, name, ok := identityKind(identity)
-	if !ok {
-		return ""
-	}
-	if ld, found := c.index[kind+":"+name]; found && ld.File != "" {
-		return fmt.Sprintf("  %s:%d", ld.File, ld.Line)
-	}
-	return ""
 }
 
 func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
@@ -220,7 +209,7 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	if image == "" {
 		image = imageForServer(ctx, live)
 	}
-	log.Info("building %s into a disposable %s", dbDir, image)
+	log.Info("creating a fresh %s and deploying %s into it", image, dbDir)
 	cont, cand, err := startContainer(ctx, cfg, image)
 	if err != nil {
 		return nil, err
@@ -231,12 +220,15 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	}
 
 	prev := log.Level
-	log.Level = log.LevelSilent
-	buildErrs, err := buildCandidateResilient(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion)
+	if log.Level < log.LevelVerbose {
+		log.Level = log.LevelSilent
+	}
+	total, buildErrs, err := buildCandidateResilient(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion)
 	log.Level = prev
 	if err != nil {
 		return nil, err
 	}
+	log.Info("deployed %d of %d files into the container, %d build errors", total-len(buildErrs), total, len(buildErrs))
 
 	schemas := schemaUnion(stepsCfg)
 	liveInv, err := Inventory(ctx, live, schemas)
@@ -297,22 +289,26 @@ func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config
 	return nil
 }
 
-func buildCandidateResilient(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) ([]BuildError, error) {
+func buildCandidateResilient(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) (int, []BuildError, error) {
 	if err := prepareCandidate(ctx, cand, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
-		return nil, err
+		return 0, nil, err
 	}
 	pendings, err := apply.ListPending(ctx, cand)
 	if err != nil {
-		return nil, err
+		return 0, nil, err
 	}
+	log.Detail("deploying %d files into the local database", len(pendings))
 	var errs []BuildError
 	for _, p := range pendings {
 		st, _ := apply.FileRel(candStepsCfg, p.FilePath, candidateDir)
 		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase); err != nil {
 			errs = append(errs, BuildError{File: p.FilePath, Err: err.Error()})
+			log.Detail("  %s  FAILED  %v", p.FilePath, err)
+		} else {
+			log.Detail("  %s", p.FilePath)
 		}
 	}
-	return errs, nil
+	return len(pendings), errs, nil
 }
 
 func schemaUnion(stepsCfg *steps.Config) []string {

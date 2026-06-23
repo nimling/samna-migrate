@@ -74,6 +74,11 @@ func stopContainer(name string) {
 	exec.Command("docker", "rm", "-f", name).Run()
 }
 
+func DockerPresent() bool {
+	_, err := exec.LookPath("docker")
+	return err == nil
+}
+
 func freePort() (int, error) {
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

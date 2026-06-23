@@ -25,7 +25,7 @@ Every successful apply records both the sha256 and the full deployed `.sql` body
 
 ## Reconcile
 
-`smig reconcile` compares the local database folder, `--db-dir` (default `./database`), against the live server in depth. It runs four analyses and never lets one stop the others.
+`smig reconcile` compares the local database folder, `--db-dir` (default `./database`), against the live server in depth. It runs four analyses, never lets one stop the others, and merges them into one joint report keyed by object. Each object entry carries the remediation direction, create, drop, or update on live, the live signature, the desired SQL the files define, and the current live DDL, so the diff is enough to write the SQL that closes the gap. `--json` emits the full structured report for use in another session. `--no-container` skips the docker phase, and when docker is absent for that phase reconcile reports that it is required.
 
 The file audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, groups the results by class as a compact aligned list colored by status, and names the function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. `-v` adds the diff hunks, `-vv` the full bodies. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
 

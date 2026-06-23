@@ -2,12 +2,10 @@ package reconcile
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
 	"github.com/nimling/samna-migrate/internal/db"
-	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/sqlscan"
 	"github.com/nimling/samna-migrate/internal/steps"
 )
@@ -240,45 +238,3 @@ func similar(a, b string) float64 {
 	return float64(common) / float64(m)
 }
 
-func RenderObjects(rep *ObjReport) {
-	log.Header("object analysis: local tree against the deployed bodies")
-	if !rep.Drifted() {
-		log.Success("no object drift: %d objects match", rep.Same)
-		return
-	}
-	log.Info("%d objects changed, %d unchanged", len(rep.Changes), rep.Same)
-	for _, ch := range rep.Changes {
-		name := ch.Name
-		if ch.OldName != "" {
-			name = ch.OldName + " -> " + ch.Name
-		}
-		loc := ""
-		switch {
-		case ch.From != nil && ch.To != nil && ch.From.File == ch.To.File:
-			loc = fmt.Sprintf("%s:%d", ch.To.File, ch.To.Line)
-		case ch.From != nil && ch.To != nil:
-			loc = fmt.Sprintf("%s:%d -> %s:%d", ch.From.File, ch.From.Line, ch.To.File, ch.To.Line)
-		case ch.To != nil:
-			loc = fmt.Sprintf("%s:%d", ch.To.File, ch.To.Line)
-		case ch.From != nil:
-			loc = fmt.Sprintf("%s:%d", ch.From.File, ch.From.Line)
-		}
-		line := fmt.Sprintf("  %s %s  %s  %s", ch.Kind, name, loc, strings.Join(ch.Reasons, ", "))
-		objLine(ch.Reasons, line)
-		renderHunks(ch.Hunks)
-	}
-}
-
-func objLine(reasons []string, line string) {
-	for _, r := range reasons {
-		switch r {
-		case "added":
-			log.Success("%s", line)
-			return
-		case "deleted":
-			log.Warn("%s", line)
-			return
-		}
-	}
-	log.Info("%s", line)
-}
