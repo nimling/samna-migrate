@@ -12,7 +12,7 @@ smig upgrade    Walk the samna_migrate schema chain and reconcile state. Local o
 smig check      Preflight only. No writes. Reports drift.
 smig stat       Print current state and per step file counts.
 smig merge      Rebase live SQL into .upgraded/; --apply moves it in; --revert restores a snapshot.
-smig reconcile  Compare the local database folder against the live server: file audit, live diagnostic, container build and diff.
+smig reconcile  Compare the local folder against the live server in depth: file audit, object analysis, git locate, container build and diff.
 smig lint       Static checks on every step file. No database needed.
 smig lock       Write the applied ledger to samna_migrate.lock.json for lint to guard.
 smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
@@ -25,13 +25,15 @@ Every successful apply records both the sha256 and the full deployed `.sql` body
 
 ## Reconcile
 
-`smig reconcile` compares the local database folder, `--db-dir` (default `./database`), against the live server in depth. It runs three analyses and never lets one stop the others.
+`smig reconcile` compares the local database folder, `--db-dir` (default `./database`), against the live server in depth. It runs four analyses and never lets one stop the others.
 
-The file audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, groups the results by class as a compact aligned list colored by status, and uses the SQL scanner to name the exact function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. Normal output lists the per object changes; `-v` adds the diff hunks; `-vv` dumps the full bodies on both sides. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
+The file audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, groups the results by class as a compact aligned list colored by status, and names the function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. `-v` adds the diff hunks, `-vv` the full bodies. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
 
-The live diagnostic introspects the target server directly and reports the functions, tables, views, types, and sequences your local files define that are missing from live, with their file and line, and the live objects no local file defines. It compares names across the step schemas and needs no docker.
+The object analysis tracks every function, table, view, type, and sequence globally across all files and compares the working tree against the bodies stored at apply time. For each object it reports whether it moved to another file, was renamed by best effort body match, changed signature, changed content, changed position, was added, or deleted, each as a git style diff carrying the from and to file and line.
 
-The container comparison starts a local docker postgres, applies every local file from `--db-dir` into it, introspects the produced objects, and compares them object for object against the live server, reporting what is in live but not produced by the files, what the files produce that is missing from live, and what differs. The files apply with their step `pre` and `vars` expanded from the environment, so run reconcile with the deploy env; a build failure is reported without stopping the other two analyses. `--no-container` skips this phase. `--keep` leaves the container and candidate tree for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
+The git locate, when the folder is a git repository, prints the real `git diff` of each changed file between the commit it was deployed from and the working tree, plus any renames git recorded. The deployed commit is captured into `samna_migrate.file.applied_commit` during `smig up`, `smig rebase`, and `smig merge --apply`. It is silently skipped when the folder is not a git repo or a file is untracked.
+
+The container comparison starts a local docker postgres, applies every local file from `--db-dir` into it resiliently, introspects the produced objects, and compares them object for object against the live server, reporting what is in live but not produced by the files, what the files produce that is missing from live, and what differs as a unified diff with its source file and line. The files apply with their step `pre` and `vars` expanded from the environment, so run reconcile with the deploy env; a build failure is recorded and reported without stopping the other analyses. `--no-container` skips this phase. `--keep` leaves the container and candidate tree for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
 
 ## Drift guarding
 

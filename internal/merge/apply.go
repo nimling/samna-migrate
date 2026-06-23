@@ -15,6 +15,7 @@ import (
 
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
+	"github.com/nimling/samna-migrate/internal/git"
 	"github.com/nimling/samna-migrate/internal/hash"
 	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
@@ -145,6 +146,7 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 		for _, f := range files {
 			sha, _ := hash.File(f.AbsPath)
 			size, _ := hash.Size(f.AbsPath)
+			commit := git.FileCommit(dbDir, f.Rel)
 			var exists int
 			d.Pool.QueryRow(ctx, `SELECT 1 FROM samna_migrate.file WHERE file_path = $1`, f.Rel).Scan(&exists)
 			if exists == 0 {
@@ -154,14 +156,14 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 				}
 				d.Pool.Exec(ctx, `
 					INSERT INTO samna_migrate.file (step_name, step_type, slug, version, file_name, file_path,
-					                                 sha256, size_bytes, state, position)
-					VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, 'applied',
+					                                 sha256, size_bytes, applied_commit, state, position)
+					VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $8, NULLIF($9, ''), 'applied',
 					        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1)`,
-					st.Name, st.Type, slug, ver, f.Name, f.Rel, sha, size)
+					st.Name, st.Type, slug, ver, f.Name, f.Rel, sha, size, commit)
 				rekeyed++
 			} else {
-				if err := d.ExecUpgrade(ctx, `UPDATE samna_migrate.file SET sha256 = $1, size_bytes = $2, updated_at = now() WHERE file_path = $3`,
-					sha, size, f.Rel); err != nil {
+				if err := d.ExecUpgrade(ctx, `UPDATE samna_migrate.file SET sha256 = $1, size_bytes = $2, applied_commit = NULLIF($3, ''), updated_at = now() WHERE file_path = $4`,
+					sha, size, commit, f.Rel); err != nil {
 					log.Warn("rekey %s: %v", f.Rel, err)
 				}
 			}

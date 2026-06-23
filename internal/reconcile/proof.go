@@ -180,10 +180,28 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	return nil
 }
 
+type BuildError struct {
+	File string
+	Err  string
+}
+
 type ContainerDiff struct {
-	Diff *InventoryDiff
-	live map[string]string
-	cand map[string]string
+	Diff        *InventoryDiff
+	BuildErrors []BuildError
+	live        map[string]string
+	cand        map[string]string
+	index       map[string]LiveDiff
+}
+
+func (c *ContainerDiff) loc(identity string) string {
+	kind, name, ok := identityKind(identity)
+	if !ok {
+		return ""
+	}
+	if ld, found := c.index[kind+":"+name]; found && ld.File != "" {
+		return fmt.Sprintf("  %s:%d", ld.File, ld.Line)
+	}
+	return ""
 }
 
 func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
@@ -211,9 +229,15 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	if !opts.Keep {
 		defer stopContainer(cont.Name)
 	}
-	if err := bootstrapCandidate(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
-		return nil, fmt.Errorf("build failed: %w", err)
+
+	prev := log.Level
+	log.Level = log.LevelSilent
+	buildErrs, err := buildCandidateResilient(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion)
+	log.Level = prev
+	if err != nil {
+		return nil, err
 	}
+
 	schemas := schemaUnion(stepsCfg)
 	liveInv, err := Inventory(ctx, live, schemas)
 	if err != nil {
@@ -226,10 +250,17 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	if opts.Keep {
 		log.Plain("container kept: %s on port %d, candidate tree at %s", cont.Name, cont.Port, candidateDir)
 	}
-	return &ContainerDiff{Diff: CompareInventories(liveInv, candInv), live: liveInv, cand: candInv}, nil
+	index, _ := collectLocalObjects(stepsCfg, dbDir)
+	return &ContainerDiff{
+		Diff:        CompareInventories(liveInv, candInv),
+		BuildErrors: buildErrs,
+		live:        liveInv,
+		cand:        candInv,
+		index:       index,
+	}, nil
 }
 
-func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) error {
+func prepareCandidate(ctx context.Context, cand *db.DB, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) error {
 	if err := schema.Ensure(ctx, cand); err != nil {
 		return err
 	}
@@ -243,7 +274,12 @@ func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config
 	if err := schema.WriteYAMLSha(ctx, cand, snap.DiskYAMLSha, toolVersion); err != nil {
 		return err
 	}
-	if _, err := preflight.Scan(ctx, cand, snap, candStepsCfg, candidateDir); err != nil {
+	_, err = preflight.Scan(ctx, cand, snap, candStepsCfg, candidateDir)
+	return err
+}
+
+func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) error {
+	if err := prepareCandidate(ctx, cand, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
 		return err
 	}
 	pendings, err := apply.ListPending(ctx, cand)
@@ -259,6 +295,24 @@ func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config
 		}
 	}
 	return nil
+}
+
+func buildCandidateResilient(ctx context.Context, cand *db.DB, candCfg *config.Config, candStepsCfg *steps.Config, candSteps, candidateDir, toolVersion string) ([]BuildError, error) {
+	if err := prepareCandidate(ctx, cand, candStepsCfg, candSteps, candidateDir, toolVersion); err != nil {
+		return nil, err
+	}
+	pendings, err := apply.ListPending(ctx, cand)
+	if err != nil {
+		return nil, err
+	}
+	var errs []BuildError
+	for _, p := range pendings {
+		st, _ := apply.FileRel(candStepsCfg, p.FilePath, candidateDir)
+		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase); err != nil {
+			errs = append(errs, BuildError{File: p.FilePath, Err: err.Error()})
+		}
+	}
+	return errs, nil
 }
 
 func schemaUnion(stepsCfg *steps.Config) []string {

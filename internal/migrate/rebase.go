@@ -13,6 +13,7 @@ import (
 	"github.com/nimling/samna-migrate/internal/apply"
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
+	"github.com/nimling/samna-migrate/internal/git"
 	"github.com/nimling/samna-migrate/internal/hash"
 	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
@@ -121,6 +122,7 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 			return fmt.Errorf("read %s: %w", fp, err)
 		}
 		content := string(raw)
+		commit := git.FileCommit(dbDir, fp)
 
 		var id, priorSize int
 		var dbSha, state string
@@ -131,7 +133,7 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 			FROM samna_migrate.file WHERE file_path = $1`, fp).
 			Scan(&id, &dbSha, &priorAppliedSha, &priorContent, &priorSize, &state, &appliedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
-			if err := registerRebaseFile(ctx, d, cfg, stepsCfg, fp, diskSha, size, content, host, rightEdge); err != nil {
+			if err := registerRebaseFile(ctx, d, cfg, stepsCfg, fp, diskSha, size, content, commit, host, rightEdge); err != nil {
 				return err
 			}
 			mirrored++
@@ -153,10 +155,10 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 		notes := fmt.Sprintf("prior=%s new=%s reason=%s", priorSha, diskSha, rebaseReason)
 		_, err = d.Pool.Exec(ctx, `
 			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
-			                                    applied_sql, action_type, tool_version, executed_by, host, database,
+			                                    applied_sql, applied_commit, action_type, tool_version, executed_by, host, database,
 			                                    duration_ms, success, started_at, ended_at, notes)
-			VALUES ($1, 'rebase', $2, $3, $4, $5, $6, 'rebase', $7, $8, $9, $10, 0, true, now(), now(), $11)`,
-			id, fp, baseName(fp), priorSha, priorSize, priorContent, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
+			VALUES ($1, 'rebase', $2, $3, $4, $5, $6, NULLIF($7, ''), 'rebase', $8, $9, $10, $11, 0, true, now(), now(), $12)`,
+			id, fp, baseName(fp), priorSha, priorSize, priorContent, commit, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
 		if err != nil {
 			return err
 		}
@@ -166,11 +168,12 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 			    sha256           = $1,
 			    applied_sha256   = $1,
 			    applied_sql      = $2,
-			    size_bytes       = $3,
+			    applied_commit   = NULLIF($3, ''),
+			    size_bytes       = $4,
 			    state            = CASE WHEN state = 'pending' AND applied_at IS NOT NULL THEN 'applied' ELSE state END,
 			    state_changed_at = now(),
 			    updated_at       = now()
-			WHERE id = $4`, diskSha, content, size, id); err != nil {
+			WHERE id = $5`, diskSha, content, commit, size, id); err != nil {
 			return err
 		}
 
@@ -187,7 +190,7 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 	return refreshLock(ctx, d, cfg)
 }
 
-func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, fp, diskSha string, size int64, content, host string, rightEdge int) error {
+func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, fp, diskSha string, size int64, content, commit, host string, rightEdge int) error {
 	st, err := apply.FileRel(stepsCfg, fp, dbDir)
 	if err != nil {
 		return err
@@ -201,14 +204,14 @@ func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, steps
 	err = d.Pool.QueryRow(ctx, `
 		INSERT INTO samna_migrate.file
 		    (step_name, step_type, slug, version, file_name, file_path, sha256, applied_sha256,
-		     applied_sql, size_bytes, state, position, applied_position, applied_at,
+		     applied_sql, applied_commit, size_bytes, state, position, applied_position, applied_at,
 		     first_seen, discovered_at, state_changed_at, updated_at)
-		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $7, $8, $9, 'applied',
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $7, $8, NULLIF($10, ''), $9, 'applied',
 		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
 		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
 		        now(), now(), now(), now(), now())
 		RETURNING id`,
-		st.Name, st.Type, slug, ver, baseName(fp), fp, diskSha, content, size).Scan(&id)
+		st.Name, st.Type, slug, ver, baseName(fp), fp, diskSha, content, size, commit).Scan(&id)
 	if err != nil {
 		return fmt.Errorf("register %s: %w", fp, err)
 	}
@@ -216,10 +219,10 @@ func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, steps
 	notes := fmt.Sprintf("registered new=%s reason=%s", diskSha, rebaseReason)
 	_, err = d.Pool.Exec(ctx, `
 		INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
-		                                    applied_sql, action_type, tool_version, executed_by, host, database,
+		                                    applied_sql, applied_commit, action_type, tool_version, executed_by, host, database,
 		                                    duration_ms, success, started_at, ended_at, notes)
-		VALUES ($1, 'rebase', $2, $3, $4, $5, $6, 'rebase', $7, $8, $9, $10, 0, true, now(), now(), $11)`,
-		id, fp, baseName(fp), diskSha, size, content, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
+		VALUES ($1, 'rebase', $2, $3, $4, $5, $6, NULLIF($7, ''), 'rebase', $8, $9, $10, $11, 0, true, now(), now(), $12)`,
+		id, fp, baseName(fp), diskSha, size, content, commit, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
 	if err != nil {
 		return err
 	}

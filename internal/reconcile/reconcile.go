@@ -22,6 +22,7 @@ type DeployedFile struct {
 	Sha256          string
 	AppliedSha256   string
 	AppliedSQL      string
+	AppliedCommit   string
 	HasSQL          bool
 }
 
@@ -48,7 +49,7 @@ func loadDeployed(ctx context.Context, d *db.DB) (map[string]DeployedFile, error
 	rows, err := d.Pool.Query(ctx, `
 		SELECT file_path, position, COALESCE(applied_position, position), state,
 		       sha256, COALESCE(applied_sha256, ''),
-		       COALESCE(applied_sql, ''), applied_sql IS NOT NULL
+		       COALESCE(applied_sql, ''), applied_sql IS NOT NULL, COALESCE(applied_commit, '')
 		FROM samna_migrate.file
 		WHERE state IN ('applied','reverted','removed','folded')
 		ORDER BY COALESCE(applied_position, position)`)
@@ -60,12 +61,26 @@ func loadDeployed(ctx context.Context, d *db.DB) (map[string]DeployedFile, error
 	for rows.Next() {
 		var f DeployedFile
 		if err := rows.Scan(&f.FilePath, &f.Position, &f.AppliedPosition, &f.State,
-			&f.Sha256, &f.AppliedSha256, &f.AppliedSQL, &f.HasSQL); err != nil {
+			&f.Sha256, &f.AppliedSha256, &f.AppliedSQL, &f.HasSQL, &f.AppliedCommit); err != nil {
 			return nil, err
 		}
 		out[f.FilePath] = f
 	}
 	return out, rows.Err()
+}
+
+func DeployedCommits(ctx context.Context, d *db.DB) (map[string]string, error) {
+	deployed, err := loadDeployed(ctx, d)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]string{}
+	for p, df := range deployed {
+		if df.AppliedCommit != "" {
+			out[p] = df.AppliedCommit
+		}
+	}
+	return out, nil
 }
 
 func loadLocal(stepsCfg *steps.Config, dbDir string) (map[string]LocalFile, error) {

@@ -175,13 +175,36 @@ func CompareInventories(want, got map[string]string) *InventoryDiff {
 }
 
 func RenderContainerDiff(c *ContainerDiff) {
-	if c.Diff.Empty() {
+	for _, be := range c.BuildErrors {
+		log.Warn("  build error  %s", be.File)
+		log.Detail("      %s", be.Err)
+	}
+	if c.Diff.Empty() && len(c.BuildErrors) == 0 {
 		log.Success("container matches live: every object the files produce matches the server")
 		return
 	}
-	log.Info("only in live %d  only in files %d  differs %d",
-		len(c.Diff.Missing), len(c.Diff.Extra), len(c.Diff.Different))
-	reportDiff(c.Diff, c.live, c.cand)
+	log.Info("only in live %d  only in files %d  differs %d  build errors %d",
+		len(c.Diff.Missing), len(c.Diff.Extra), len(c.Diff.Different), len(c.BuildErrors))
+
+	if len(c.Diff.Missing) > 0 {
+		log.Info("in live, not produced by the files: %d", len(c.Diff.Missing))
+		for _, it := range c.Diff.Missing {
+			log.Warn("  %s%s", it, c.loc(it))
+		}
+	}
+	if len(c.Diff.Extra) > 0 {
+		log.Info("produced by the files, not in live: %d", len(c.Diff.Extra))
+		for _, it := range c.Diff.Extra {
+			log.Success("  %s%s", it, c.loc(it))
+		}
+	}
+	if len(c.Diff.Different) > 0 {
+		log.Info("definition differs: %d", len(c.Diff.Different))
+		for _, it := range c.Diff.Different {
+			log.Warn("  %s%s", it, c.loc(it))
+			renderHunks(Hunkify(Diff(splitLines(c.live[it]), splitLines(c.cand[it])), contextLines))
+		}
+	}
 }
 
 func reportDiff(diff *InventoryDiff, live, candidate map[string]string) {

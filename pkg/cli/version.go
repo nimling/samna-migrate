@@ -6,7 +6,7 @@ var (
 	Version       = "dev"
 	BuildTime     = "unknown"
 	GitCommit     = "unknown"
-	SchemaVersion = 5
+	SchemaVersion = 6
 	AnthropicKey  = ""
 	Model         = "claude-sonnet-4-6"
 )
