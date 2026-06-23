@@ -10,6 +10,7 @@ import (
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/pkg/cli"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -64,7 +65,47 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() error {
+	if err := requireEqualsFlags(os.Args[1:]); err != nil {
+		return err
+	}
 	return rootCmd.Execute()
+}
+
+func requireEqualsFlags(args []string) error {
+	value := valueFlagNames()
+	for _, a := range args {
+		if a == "--" {
+			break
+		}
+		if strings.HasPrefix(a, "--") && !strings.Contains(a, "=") {
+			name := a[2:]
+			if value[name] {
+				return fmt.Errorf("long flag --%s takes its value with an equals sign: --%s=<value>", name, name)
+			}
+		}
+	}
+	return nil
+}
+
+func valueFlagNames() map[string]bool {
+	out := map[string]bool{}
+	add := func(fs *pflag.FlagSet) {
+		fs.VisitAll(func(f *pflag.Flag) {
+			if f.NoOptDefVal == "" {
+				out[f.Name] = true
+			}
+		})
+	}
+	var walk func(c *cobra.Command)
+	walk = func(c *cobra.Command) {
+		add(c.PersistentFlags())
+		add(c.Flags())
+		for _, sub := range c.Commands() {
+			walk(sub)
+		}
+	}
+	walk(rootCmd)
+	return out
 }
 
 func wrapBlock(s string, width int) string {
