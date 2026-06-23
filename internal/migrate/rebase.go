@@ -3,11 +3,14 @@ package migrate
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/nimling/samna-migrate/internal/apply"
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
 	"github.com/nimling/samna-migrate/internal/hash"
@@ -57,7 +60,11 @@ Refreshes ` + lock.FileName + ` when it exists.`,
 			return err
 		}
 
-		targets, err := rebaseTargets(args)
+		stepsCfg, err := steps.Load(stepsFile)
+		if err != nil {
+			return err
+		}
+		targets, err := rebaseTargets(args, stepsCfg)
 		if err != nil {
 			return err
 		}
@@ -69,17 +76,13 @@ Refreshes ` + lock.FileName + ` when it exists.`,
 		if err := confirmRebase(cfg, targets); err != nil {
 			return err
 		}
-		return runRebaseMirror(ctx, d, cfg, targets)
+		return runRebaseMirror(ctx, d, cfg, stepsCfg, targets)
 	},
 }
 
-func rebaseTargets(args []string) ([]string, error) {
+func rebaseTargets(args []string, stepsCfg *steps.Config) ([]string, error) {
 	if len(args) > 0 {
 		return args, nil
-	}
-	stepsCfg, err := steps.Load(stepsFile)
-	if err != nil {
-		return nil, err
 	}
 	var rels []string
 	for _, st := range stepsCfg.Steps {
@@ -94,13 +97,13 @@ func rebaseTargets(args []string) ([]string, error) {
 	return rels, nil
 }
 
-func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, targets []string) error {
+func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, targets []string) error {
 	host := hostOrLocalhost(cfg)
 	log.Header(fmt.Sprintf("rebase: mirror %d file(s) into %s", len(targets), cfg.PGDatabase))
 
 	rightEdge := 0
 	for _, fp := range targets {
-		if w := 4 + len(fp) + 2 + len("mirrored"); w > rightEdge {
+		if w := 4 + len(fp) + 2 + len("registered"); w > rightEdge {
 			rightEdge = w
 		}
 	}
@@ -127,8 +130,15 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, targets 
 			SELECT id, sha256, COALESCE(applied_sha256, ''), applied_sql, size_bytes, state, applied_at
 			FROM samna_migrate.file WHERE file_path = $1`, fp).
 			Scan(&id, &dbSha, &priorAppliedSha, &priorContent, &priorSize, &state, &appliedAt)
+		if errors.Is(err, pgx.ErrNoRows) {
+			if err := registerRebaseFile(ctx, d, cfg, stepsCfg, fp, diskSha, size, content, host, rightEdge); err != nil {
+				return err
+			}
+			mirrored++
+			continue
+		}
 		if err != nil {
-			return fmt.Errorf("%s is not in samna_migrate.file: %w", fp, err)
+			return fmt.Errorf("%s lookup failed: %w", fp, err)
 		}
 
 		priorSha := dbSha
@@ -175,6 +185,48 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, targets 
 	log.Plain("")
 	log.Success("mirrored %d file(s)", mirrored)
 	return refreshLock(ctx, d, cfg)
+}
+
+func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, fp, diskSha string, size int64, content, host string, rightEdge int) error {
+	st, err := apply.FileRel(stepsCfg, fp, dbDir)
+	if err != nil {
+		return err
+	}
+	ver, slug, _, _ := steps.ParseFilename(baseName(fp))
+	if slug == "" {
+		slug = st.Slug
+	}
+
+	var id int
+	err = d.Pool.QueryRow(ctx, `
+		INSERT INTO samna_migrate.file
+		    (step_name, step_type, slug, version, file_name, file_path, sha256, applied_sha256,
+		     applied_sql, size_bytes, state, position, applied_position, applied_at,
+		     first_seen, discovered_at, state_changed_at, updated_at)
+		VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6, $7, $7, $8, $9, 'applied',
+		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
+		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
+		        now(), now(), now(), now(), now())
+		RETURNING id`,
+		st.Name, st.Type, slug, ver, baseName(fp), fp, diskSha, content, size).Scan(&id)
+	if err != nil {
+		return fmt.Errorf("register %s: %w", fp, err)
+	}
+
+	notes := fmt.Sprintf("registered new=%s reason=%s", diskSha, rebaseReason)
+	_, err = d.Pool.Exec(ctx, `
+		INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
+		                                    applied_sql, action_type, tool_version, executed_by, host, database,
+		                                    duration_ms, success, started_at, ended_at, notes)
+		VALUES ($1, 'rebase', $2, $3, $4, $5, $6, 'rebase', $7, $8, $9, $10, 0, true, now(), now(), $11)`,
+		id, fp, baseName(fp), diskSha, size, content, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
+	if err != nil {
+		return err
+	}
+
+	log.Step(fp, "registered", rightEdge)
+	log.Detail("      %s", shortSha(diskSha))
+	return nil
 }
 
 func runRebaseUndo(ctx context.Context, d *db.DB, cfg *config.Config, targets []string) error {
