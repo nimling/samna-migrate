@@ -15,7 +15,9 @@ type LiveDiff struct {
 	Line int
 }
 
-var liveKinds = map[string]bool{"function": true, "table": true, "view": true, "type": true, "sequence": true}
+func objIndexKey(kind, name, table string) string {
+	return kind + ":" + name + ":" + table
+}
 
 func collectLocalObjects(stepsCfg *steps.Config, dbDir string) (map[string]LiveDiff, error) {
 	out := map[string]LiveDiff{}
@@ -30,13 +32,12 @@ func collectLocalObjects(stepsCfg *steps.Config, dbDir string) (map[string]LiveD
 				return nil, err
 			}
 			for _, o := range sqlscan.Scan(string(b)) {
-				if !liveKinds[o.Kind] {
+				if o.Name == "" || !createKinds[o.Kind] {
 					continue
 				}
-				name := normName(o.Name)
-				key := o.Kind + ":" + name
+				key := objIndexKey(o.Kind, normName(o.Name), objTable(o))
 				if _, ok := out[key]; !ok {
-					out[key] = LiveDiff{Kind: o.Kind, Name: name, File: f.Rel, Line: o.Line}
+					out[key] = LiveDiff{Kind: o.Kind, Name: normName(o.Name), File: f.Rel, Line: o.Line}
 				}
 			}
 		}
@@ -44,32 +45,41 @@ func collectLocalObjects(stepsCfg *steps.Config, dbDir string) (map[string]LiveD
 	return out, nil
 }
 
-func identityKind(identity string) (kind, name string, ok bool) {
+func parseIdentity(identity string) (kind, name, table, display string, ok bool) {
 	sp := strings.IndexByte(identity, ' ')
 	if sp < 0 {
-		return "", "", false
+		return "", "", "", "", false
 	}
-	kind = mapLiveKind(identity[:sp])
-	if kind == "" {
-		return "", "", false
-	}
+	head := identity[:sp]
 	rest := strings.TrimSpace(identity[sp+1:])
-	if kind == "function" {
-		if p := strings.IndexByte(rest, '('); p >= 0 {
-			rest = rest[:p]
-		}
+	display = identity
+	switch head {
+	case "function", "view", "sequence", "table", "index":
+		return head, normName(stripArgs(rest)), "", display, true
+	case "type", "enum":
+		return "type", normName(rest), "", display, true
+	case "constraint", "trigger":
+		tbl, n := splitOwned(rest)
+		return head, n, normName(tbl), display, true
+	case "grant", "comment":
+		return head, strings.ToLower(rest), "", display, true
 	}
-	return kind, normName(rest), true
+	return "", "", "", "", false
 }
 
-func mapLiveKind(k string) string {
-	switch k {
-	case "function", "table", "view", "sequence":
-		return k
-	case "type", "enum":
-		return "type"
+func stripArgs(s string) string {
+	if p := strings.IndexByte(s, '('); p >= 0 {
+		return s[:p]
 	}
-	return ""
+	return s
+}
+
+func splitOwned(rest string) (table, name string) {
+	dot := strings.LastIndexByte(rest, '.')
+	if dot < 0 {
+		return "", strings.ToLower(rest)
+	}
+	return normName(rest[:dot]), strings.ToLower(rest[dot+1:])
 }
 
 func normName(s string) string {

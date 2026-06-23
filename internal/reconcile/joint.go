@@ -11,6 +11,13 @@ import (
 	"github.com/nimling/samna-migrate/internal/log"
 )
 
+type Sections struct {
+	Files   bool
+	Objects bool
+	Git     bool
+	Db      bool
+}
+
 type ColumnChange struct {
 	Name   string `json:"name"`
 	Change string `json:"change"`
@@ -22,6 +29,7 @@ type JointObj struct {
 	Kind           string         `json:"kind"`
 	Name           string         `json:"name"`
 	Table          string         `json:"table,omitempty"`
+	Phase          int            `json:"phase"`
 	RenamedTo      string         `json:"renamed_to,omitempty"`
 	Signature      string         `json:"signature,omitempty"`
 	Reasons        []string       `json:"reasons"`
@@ -36,8 +44,8 @@ type JointObj struct {
 	DesiredSQL     string         `json:"desired_sql,omitempty"`
 	CurrentDDL     string         `json:"current_live_ddl,omitempty"`
 
+	fromDB      bool
 	sourceHunks []Hunk
-	liveHunks   []Hunk
 }
 
 type JointFile struct {
@@ -45,6 +53,8 @@ type JointFile struct {
 	Class   string `json:"class"`
 	Commit  string `json:"deployed_commit,omitempty"`
 	GitDiff string `json:"git_diff,omitempty"`
+
+	hunks []Hunk
 }
 
 type Joint struct {
@@ -57,9 +67,43 @@ type Joint struct {
 	Objects           []JointObj   `json:"objects"`
 	Files             []JointFile  `json:"files"`
 	BuildErrors       []BuildError `json:"build_errors,omitempty"`
+
+	sel Sections
 }
 
-func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerDiff, commits map[string]string, dbDir string) *Joint {
+func phaseOf(kind string) int {
+	switch kind {
+	case "extension":
+		return 0
+	case "schema":
+		return 1
+	case "type":
+		return 2
+	case "table":
+		return 3
+	case "sequence":
+		return 4
+	case "function":
+		return 5
+	case "view":
+		return 6
+	case "index":
+		return 7
+	case "constraint":
+		return 8
+	case "trigger":
+		return 9
+	case "policy":
+		return 10
+	case "grant":
+		return 11
+	case "comment":
+		return 12
+	}
+	return 5
+}
+
+func BuildJoint(sel Sections, dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerDiff, commits map[string]string, dbDir string) *Joint {
 	complete := cdiff != nil && len(cdiff.BuildErrors) == 0
 	j := &Joint{
 		Database:          dbLabel,
@@ -67,53 +111,57 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 		ContainerComplete: complete,
 		GitRepo:           git.IsRepo(dbDir),
 		ObjectsSame:       obj.Same,
+		sel:               sel,
 	}
 
 	byKey := map[string]*JointObj{}
 	var order []string
 	get := func(kind, name, table string) *JointObj {
-		key := kind + ":" + name + ":" + table
+		key := objIndexKey(kind, name, table)
 		if jo, ok := byKey[key]; ok {
 			return jo
 		}
-		jo := &JointObj{Kind: kind, Name: name, Table: table}
+		jo := &JointObj{Kind: kind, Name: name, Table: table, Phase: phaseOf(kind)}
 		byKey[key] = jo
 		order = append(order, key)
 		return jo
 	}
 
-	for i := range obj.Changes {
-		ch := &obj.Changes[i]
-		jo := get(ch.Kind, ch.Name, ch.Table)
-		jo.Reasons = append(jo.Reasons, ch.Reasons...)
-		jo.sourceHunks = ch.Hunks
-		if ch.OldName != "" {
-			jo.RenamedTo = ch.Name
-		}
-		if ch.To != nil {
-			jo.File, jo.Line = ch.To.File, ch.To.Line
-			jo.DesiredSQL = ch.To.Body
-			jo.Commit = commits[ch.To.File]
-		}
-		if ch.From != nil && (ch.To == nil || ch.From.File != ch.To.File) {
-			jo.MovedFrom = fmt.Sprintf("%s:%d", ch.From.File, ch.From.Line)
+	if sel.Objects {
+		for i := range obj.Changes {
+			ch := &obj.Changes[i]
+			jo := get(ch.Kind, ch.Name, ch.Table)
+			jo.Reasons = append(jo.Reasons, ch.Reasons...)
+			jo.sourceHunks = ch.Hunks
+			if ch.OldName != "" {
+				jo.RenamedTo = ch.Name
+			}
+			if ch.To != nil {
+				jo.File, jo.Line = ch.To.File, ch.To.Line
+				jo.DesiredSQL = ch.To.Body
+				jo.Commit = commits[ch.To.File]
+			}
+			if ch.From != nil && (ch.To == nil || ch.From.File != ch.To.File) {
+				jo.MovedFrom = fmt.Sprintf("%s:%d", ch.From.File, ch.From.Line)
+			}
 		}
 	}
 
-	if cdiff != nil {
+	if sel.Db && cdiff != nil {
 		liveObj := func(id, reason string) *JointObj {
-			kind, name, ok := identityKind(id)
+			kind, name, table, display, ok := parseIdentity(id)
 			if !ok {
 				return nil
 			}
-			jo := get(kind, name, "")
+			jo := get(kind, name, table)
+			jo.fromDB = true
 			jo.Reasons = append(jo.Reasons, reason)
-			jo.Signature = id
+			jo.Signature = display
 			if v, ok := cdiff.live[id]; ok {
 				jo.CurrentDDL = v
 			}
 			if jo.File == "" {
-				if ld, ok := cdiff.index[kind+":"+name]; ok {
+				if ld, ok := cdiff.index[objIndexKey(kind, name, table)]; ok {
 					jo.File, jo.Line = ld.File, ld.Line
 					jo.Commit = commits[ld.File]
 				}
@@ -128,7 +176,6 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 			if jo.Kind == "table" {
 				jo.Columns = columnChanges(cdiff.live[id], cdiff.cand[id])
 			}
-			jo.liveHunks = Hunkify(Diff(splitLines(cdiff.live[id]), splitLines(cdiff.cand[id])), contextLines)
 			if jo.DesiredSQL == "" {
 				jo.DesiredSQL = cdiff.cand[id]
 			}
@@ -156,19 +203,16 @@ func BuildJoint(dbLabel string, audit *Report, obj *ObjReport, cdiff *ContainerD
 		j.Objects = append(j.Objects, *jo)
 	}
 	sort.Slice(j.Objects, func(a, b int) bool {
-		if j.Objects[a].Kind != j.Objects[b].Kind {
-			return j.Objects[a].Kind < j.Objects[b].Kind
+		if j.Objects[a].Phase != j.Objects[b].Phase {
+			return j.Objects[a].Phase < j.Objects[b].Phase
 		}
 		return j.Objects[a].Name < j.Objects[b].Name
 	})
 
-	for _, f := range audit.Files {
-		switch f.Class {
-		case Added, Dropped, Reordered:
-			j.Files = append(j.Files, JointFile{Path: f.FilePath, Class: f.Class.String(), Commit: commits[f.FilePath]})
-		case Changed:
-			jf := JointFile{Path: f.FilePath, Class: "changed", Commit: commits[f.FilePath]}
-			if j.GitRepo && jf.Commit != "" {
+	if sel.Files || sel.Git {
+		for _, f := range audit.Files {
+			jf := JointFile{Path: f.FilePath, Class: f.Class.String(), Commit: commits[f.FilePath], hunks: f.Hunks}
+			if sel.Git && j.GitRepo && jf.Commit != "" && f.Class != Added {
 				jf.GitDiff = git.DiffSince(dbDir, jf.Commit, f.FilePath)
 			}
 			j.Files = append(j.Files, jf)
@@ -290,7 +334,7 @@ func RenderJoint(j *Joint) {
 		log.Detail("ignored %d extension owned objects on live", j.ExtensionsIgnored)
 	}
 	if len(j.Objects) == 0 && len(j.Files) == 0 && len(j.BuildErrors) == 0 {
-		log.Success("no drift: the local tree, the deployed bodies, and the live server all agree")
+		log.Success("no drift across the selected views")
 		return
 	}
 
@@ -320,31 +364,24 @@ func RenderJoint(j *Joint) {
 			tail += "  (deployed " + shortCommit(o.Commit) + ")"
 		}
 		jointColor(o, fmt.Sprintf("  %s %s  %s  %s", o.Kind, name, loc, tail))
-		for _, c := range o.Columns {
-			switch c.Change {
-			case "add":
-				log.DiffLine('+', "    "+c.Name+" "+c.Built)
-			case "drop":
-				log.DiffLine('-', "    "+c.Name+" "+c.Live)
-			case "alter":
-				log.DiffLine('-', "    "+c.Name+" "+c.Live)
-				log.DiffLine('+', "    "+c.Name+" "+c.Built)
-			}
-		}
-		if len(o.Columns) == 0 && len(o.liveHunks) > 0 {
-			log.Detail("    live vs built")
-			renderHunks(o.liveHunks)
-		}
-		if len(o.sourceHunks) > 0 {
-			log.Detail("    file change")
+		if o.fromDB {
+			log.Detail("    --- live")
+			log.Detail("    +++ files")
+			renderHunks(Hunkify(Diff(splitLines(o.CurrentDDL), splitLines(o.DesiredSQL)), contextLines))
+		} else if len(o.sourceHunks) > 0 {
 			renderHunks(o.sourceHunks)
 		}
 	}
 
 	for _, f := range j.Files {
-		log.Warn("  file %s  %s", f.Class, f.Path)
-		if f.GitDiff != "" {
-			log.Detail("    git diff since %s", shortCommit(f.Commit))
+		if j.sel.Files {
+			log.Warn("  file %s  %s", f.Class, f.Path)
+			if len(f.hunks) > 0 {
+				renderHunks(f.hunks)
+			}
+		}
+		if j.sel.Git && f.GitDiff != "" {
+			log.Detail("  git %s since %s", f.Path, shortCommit(f.Commit))
 			renderGitDiffLines(f.GitDiff)
 		}
 	}
