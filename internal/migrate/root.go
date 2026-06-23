@@ -1,10 +1,14 @@
 package migrate
 
 import (
+	"bytes"
 	"fmt"
 	"math"
 	"os"
+	"os/exec"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/nimling/samna-migrate/internal/log"
@@ -138,9 +142,8 @@ func stdoutTTY() bool {
 }
 
 const (
-	jumpAmp    = 2
-	animFrames = 18
-	animDelay  = 22 * time.Millisecond
+	jumpAmp   = 2
+	animDelay = 60 * time.Millisecond
 )
 
 var shimmer = []string{
@@ -289,37 +292,106 @@ func printVersion(w int) {
 	fmt.Printf("%s\033[90m%s\033[0m\n", strings.Repeat(" ", pad), v)
 }
 
-func showBanner() {
+func showBannerThenHelp(body string) {
 	grid, w := bannerGrid()
 	segs := bannerLetters(grid, w)
 	owner := ownerColumns(segs, w)
 	height := len(grid) + jumpAmp
-	if !stdoutTTY() {
-		renderBannerFrame(grid, w, owner, segs, 0, false)
-		printVersion(w)
+
+	renderBannerFrame(grid, w, owner, segs, 0, false)
+	printVersion(w)
+	fmt.Print(body)
+
+	if !stdoutTTY() || !stdinTTY() {
 		return
 	}
+	restore := cbreak()
+	if restore == nil {
+		return
+	}
+
+	below := 1 + strings.Count(body, "\n")
+	up := height + below
+	stop := make(chan struct{})
+	go func() {
+		var b [1]byte
+		os.Stdin.Read(b[:])
+		close(stop)
+	}()
+
 	fmt.Print("\033[?25l")
-	for f := 0; f < animFrames; f++ {
-		if f > 0 {
-			fmt.Printf("\033[%dA", height)
+	for frame := 1; ; frame++ {
+		select {
+		case <-stop:
+			fmt.Printf("\033[%dA", up)
+			renderBannerFrame(grid, w, owner, segs, 0, false)
+			fmt.Printf("\033[%dB", below)
+			fmt.Print("\033[?25h")
+			restore()
+			return
+		default:
 		}
-		renderBannerFrame(grid, w, owner, segs, f, true)
+		fmt.Printf("\033[%dA", up)
+		renderBannerFrame(grid, w, owner, segs, frame, true)
+		fmt.Printf("\033[%dB", below)
 		time.Sleep(animDelay)
 	}
-	fmt.Printf("\033[%dA", height)
-	renderBannerFrame(grid, w, owner, segs, 0, false)
-	fmt.Print("\033[?25h")
-	printVersion(w)
+}
+
+func stdinTTY() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func cbreak() func() {
+	probe := exec.Command("stty", "-g")
+	probe.Stdin = os.Stdin
+	out, err := probe.Output()
+	if err != nil {
+		return nil
+	}
+	saved := strings.TrimSpace(string(out))
+	apply := func(args ...string) {
+		c := exec.Command("stty", args...)
+		c.Stdin = os.Stdin
+		c.Run()
+	}
+	apply("-echo", "-icanon", "min", "1", "time", "0")
+	done := false
+	restore := func() {
+		if done {
+			return
+		}
+		done = true
+		apply(saved)
+	}
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-sig
+		restore()
+		fmt.Print("\033[?25h")
+		os.Exit(130)
+	}()
+	return restore
 }
 
 func init() {
 	defaultHelp := rootCmd.HelpFunc()
 	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
-		if c == rootCmd {
-			showBanner()
+		if c != rootCmd {
+			defaultHelp(c, args)
+			return
 		}
+		var buf bytes.Buffer
+		orig := c.OutOrStdout()
+		c.SetOut(&buf)
 		defaultHelp(c, args)
+		c.SetOut(orig)
+		showBannerThenHelp(buf.String())
 	})
 
 	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", envDefault("MIGRATE_SCHEMA", "./database/migrate.yml"), "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
