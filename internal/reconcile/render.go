@@ -2,6 +2,7 @@ package reconcile
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/nimling/samna-migrate/internal/log"
 )
@@ -15,42 +16,47 @@ func Render(r *Report) {
 	log.Info("added %d  dropped %d  changed %d  reordered %d  same %d",
 		r.Added, r.Dropped, r.Changed, r.Reordered, r.Same)
 
-	rightEdge := 0
-	for _, f := range r.Files {
-		if w := 2 + len(f.FilePath) + 2 + len(fileLabel(f)); w > rightEdge {
-			rightEdge = w
+	files := append([]FileDiff{}, r.Files...)
+	sort.Slice(files, func(i, j int) bool {
+		if classRank(files[i].Class) != classRank(files[j].Class) {
+			return classRank(files[i].Class) < classRank(files[j].Class)
+		}
+		return files[i].FilePath < files[j].FilePath
+	})
+
+	labelW := 0
+	pathW := 0
+	for _, f := range files {
+		if n := len(f.Class.String()); n > labelW {
+			labelW = n
+		}
+		if n := len(f.FilePath); n > pathW {
+			pathW = n
 		}
 	}
-	for _, f := range r.Files {
-		renderFile(f, rightEdge)
+
+	for _, f := range files {
+		renderFile(f, labelW, pathW)
 	}
 	if r.Truncated {
 		log.Warn("stopped at the first difference, rerun without --stop-one-error for the full report")
 	}
 }
 
-func fileLabel(f FileDiff) string {
-	switch {
-	case f.WhitespaceOnly:
-		return "changed whitespace only"
-	case f.Class == Changed && !f.HasBody:
-		return "changed no stored body"
-	default:
-		return f.Class.String()
+func renderFile(f FileDiff, labelW, pathW int) {
+	detail := fileDetail(f)
+	line := fmt.Sprintf("  %-*s  %-*s", labelW, f.Class.String(), pathW, f.FilePath)
+	if detail != "" {
+		line += "  " + detail
 	}
-}
+	classLine(f.Class, trimRight(line))
 
-func renderFile(f FileDiff, rightEdge int) {
-	log.Section(f.FilePath, fileLabel(f), rightEdge)
-	if f.Class == Reordered {
-		log.Plain("  position deployed %d local %d", f.DeployedPos, f.LocalPos)
-	}
 	for _, o := range f.Objects {
 		name := o.Name
 		if name == "" {
 			name = o.Kind
 		}
-		log.Plain("  %s %s  %s  %s", o.Kind, name, objectLocation(f.FilePath, o), o.Class.String())
+		log.Plain("    %-9s %s  %s  %s", o.Kind, name, objectLocation(f.FilePath, o), o.Class.String())
 	}
 
 	if log.Level == log.LevelVerbose {
@@ -65,6 +71,50 @@ func renderFile(f FileDiff, rightEdge int) {
 	if log.Level >= log.LevelExtreme {
 		renderEdits(f.FileEdits)
 	}
+}
+
+func fileDetail(f FileDiff) string {
+	switch {
+	case f.Class == Reordered:
+		return fmt.Sprintf("deployed %d local %d", f.DeployedPos, f.LocalPos)
+	case f.WhitespaceOnly:
+		return "whitespace only"
+	case f.Class == Changed && !f.HasBody:
+		return "no stored body"
+	}
+	return ""
+}
+
+func classLine(c Class, line string) {
+	switch c {
+	case Added:
+		log.Success("%s", line)
+	case Dropped, Changed:
+		log.Warn("%s", line)
+	default:
+		log.Info("%s", line)
+	}
+}
+
+func classRank(c Class) int {
+	switch c {
+	case Added:
+		return 0
+	case Changed:
+		return 1
+	case Reordered:
+		return 2
+	case Dropped:
+		return 3
+	}
+	return 4
+}
+
+func trimRight(s string) string {
+	for len(s) > 0 && s[len(s)-1] == ' ' {
+		s = s[:len(s)-1]
+	}
+	return s
 }
 
 func objectLocation(filePath string, o ObjectDiff) string {

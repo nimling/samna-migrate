@@ -25,13 +25,13 @@ Every successful apply records both the sha256 and the full deployed `.sql` body
 
 ## Reconcile
 
-`smig reconcile` runs two phases.
+`smig reconcile` always runs the audit, and runs the proof when it is needed.
 
-The audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, and uses the SQL scanner to name the exact function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. Normal output lists the per object changes; `-v` adds the diff hunks; `-vv` dumps the full bodies on both sides. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
+The audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, groups the results by class as a compact aligned list colored by status, and uses the SQL scanner to name the exact function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. Normal output lists the per object changes; `-v` adds the diff hunks; `-vv` dumps the full bodies on both sides. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
 
 The proof builds a candidate source tree from `--db-dir`, overlaying `.upgraded/` when it is present, bootstraps it into a disposable postgres container started via docker, and records three verdicts: `bootstrap` that the candidate builds a fresh database without errors, `equality` that the fresh database matches the live database object for object across types, tables, constraints, indexes, views, functions, triggers, sequences, grants, and comments, and `determinism` that a second independent bootstrap matches the first. All three passing writes `.upgraded/reconcile.json`, the proof `smig merge --apply` requires unless `--force` is given.
 
-`--no-proof` runs the audit alone without docker. `--dry-run` reports verdicts without writing the proof. `--keep` leaves the container and candidate tree in place for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
+The proof runs when `.upgraded/` is present, the merge workflow, or when `--proof` forces it on a bare tree. Without either, reconcile runs the audit alone and needs no docker. `--dry-run` reports verdicts without writing the proof. `--keep` leaves the container and candidate tree in place for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
 
 ## Drift guarding
 
