@@ -1,4 +1,4 @@
-package verify
+package reconcile
 
 import (
 	"crypto/sha256"
@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-const manifestName = "verify.json"
+const manifestName = "reconcile.json"
 
 type Verdicts struct {
 	Bootstrap   bool `json:"bootstrap"`

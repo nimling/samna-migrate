@@ -302,7 +302,7 @@ func Rebase(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.C
 	}
 
 	log.Success(".upgraded/ ready at %s", upgradedDir)
-	log.Info("review the tree, run smig verify, then smig merge --apply")
+	log.Info("review the tree, run smig reconcile, then smig merge --apply")
 	return nil
 }
 

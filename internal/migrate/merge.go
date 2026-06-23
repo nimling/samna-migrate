@@ -29,7 +29,7 @@ var mergeCmd = &cobra.Command{
   merge --apply      Snapshot the source tree to .migrate-<ts>-<sha>/ and move
                      .upgraded/ into the source tree. Reconcile samna_migrate.file
                      rows (folded migrations, rekeyed file rows). Requires the
-                     proof written by smig verify unless --force is given.
+                     proof written by smig reconcile unless --force is given.
 
   merge --revert [n] Restore a prior .migrate-<n>/ snapshot. Defaults to the most
                      recent one. Refuses unless the last merge action was an apply,

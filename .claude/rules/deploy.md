@@ -20,7 +20,7 @@ This repo publishes one artefact: the `smig` CLI, consumed as a Go module via `g
 
 1. Add or extend tests for any change with an observable contract: package level `_test.go` files for pure logic, `test/integration/` for paths that need a real postgres, `test/e2e/` for CLI level behaviour.
 
-2. Run `just test-integration` and `just test-e2e` when the change touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/verify`, or `internal/schema`. These need docker and the `../bookable_server_test/` sibling checkout.
+2. Run `just test-integration` and `just test-e2e` when the change touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/reconcile`, or `internal/schema`. These need docker and the `../bookable_server_test/` sibling checkout.
 
 3. Write a single sentence commit message that describes the user visible change. The release notes derive from `git log` after the tag.
 

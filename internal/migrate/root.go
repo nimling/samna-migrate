@@ -1,7 +1,10 @@
 package migrate
 
 import (
+	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/pkg/cli"
@@ -37,10 +40,12 @@ const banner = "\n" +
 	" ▄████████▀   ▀█   ███   █▀  █▀     ████████▀  \n"
 
 var rootCmd = &cobra.Command{
-	Use:     "smig",
-	Short:   "Database migration tool with upgrade-gated CI deploys",
-	Long:    banner + "\nsmig runs structured database migrations defined in a yaml step file, with sha-locked apply history, optional position-based ordering, and a strict boot_check that gates CI behind operator-acknowledged local upgrades.",
-	Version: cli.Version,
+	Use:           "smig",
+	Short:         "Database migration tool with upgrade-gated CI deploys",
+	Long:          "smig runs structured database migrations defined in a yaml step file, with sha-locked apply history, optional position-based ordering, and a strict boot_check that gates CI behind operator-acknowledged local upgrades.",
+	Version:       cli.Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		switch {
 		case silent:
@@ -59,7 +64,51 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+func stdoutTTY() bool {
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
+func showBanner() {
+	lines := strings.Split(strings.Trim(banner, "\n"), "\n")
+	if !stdoutTTY() {
+		fmt.Println(strings.Join(lines, "\n"))
+		return
+	}
+	fmt.Print("\033[?25l")
+	for _, ln := range lines {
+		fmt.Printf("\033[36m%s\033[0m\n", ln)
+	}
+	for s := 0; s < len(lines); s++ {
+		fmt.Printf("\033[%dA", len(lines))
+		for i, ln := range lines {
+			if i == s {
+				fmt.Printf("\033[1;37m%s\033[0m\n", ln)
+			} else {
+				fmt.Printf("\033[36m%s\033[0m\n", ln)
+			}
+		}
+		time.Sleep(40 * time.Millisecond)
+	}
+	fmt.Printf("\033[%dA", len(lines))
+	for _, ln := range lines {
+		fmt.Printf("\033[1;36m%s\033[0m\n", ln)
+	}
+	fmt.Print("\033[?25h")
+}
+
 func init() {
+	defaultHelp := rootCmd.HelpFunc()
+	rootCmd.SetHelpFunc(func(c *cobra.Command, args []string) {
+		if c == rootCmd {
+			showBanner()
+		}
+		defaultHelp(c, args)
+	})
+
 	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", envDefault("MIGRATE_SCHEMA", "./database/migrate.yml"), "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
 	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", envDefault("DB_DIR", "./database"), "Path to database directory, defaults from DB_DIR")
 	rootCmd.PersistentFlags().StringVar(&envFile, "env", "", "Optional dotenv file to load")

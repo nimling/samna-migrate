@@ -1,5 +1,5 @@
 name: 'smig'
-description: 'Run samna-migrate (smig) database migrations: up, check, down, merge, verify, lock, rebaseline, upgrade, stat'
+description: 'Run samna-migrate (smig) database migrations: up, check, down, merge, reconcile, lock, rebase, upgrade, stat'
 author: 'nimtech'
 branding:
   icon: 'database'
@@ -10,7 +10,7 @@ inputs:
     required: false
     default: '1.0.12'
   command:
-    description: 'smig command to run: up, check, down, upgrade, merge, verify, lock, rebaseline, stat'
+    description: 'smig command to run: up, check, down, upgrade, merge, reconcile, lock, rebase, stat'
     required: true
     default: 'up'
   schema:

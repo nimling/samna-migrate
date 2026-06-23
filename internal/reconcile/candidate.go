@@ -1,4 +1,4 @@
-package verify
+package reconcile
 
 import (
 	"io"
@@ -9,7 +9,7 @@ import (
 )
 
 func materializeCandidate(stepsCfg *steps.Config, stepsFile, dbDir, upgradedDir string) (string, string, error) {
-	candidateDir, err := os.MkdirTemp("", "smig-verify-")
+	candidateDir, err := os.MkdirTemp("", "smig-reconcile-")
 	if err != nil {
 		return "", "", err
 	}

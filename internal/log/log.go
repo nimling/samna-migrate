@@ -109,6 +109,27 @@ func Step(name, detail string, rightEdge int) {
 	fmt.Printf("  %s✓%s %s%s%s%s%s\n", colorGreen, colorReset, name, strings.Repeat(" ", pad), colorGray, detail, colorReset)
 }
 
+func DiffHunk(header string) {
+	if Level == LevelSilent {
+		return
+	}
+	fmt.Printf("%s%s%s\n", colorCyan, header, colorReset)
+}
+
+func DiffLine(op rune, text string) {
+	if Level == LevelSilent {
+		return
+	}
+	color := colorGray
+	switch op {
+	case '+':
+		color = colorGreen
+	case '-':
+		color = colorRed
+	}
+	fmt.Printf("%s%c %s%s\n", color, op, text, colorReset)
+}
+
 func Fatal(format string, args ...any) {
 	Err(format, args...)
 	os.Exit(1)

@@ -1,0 +1,334 @@
+package migrate
+
+import (
+	"bufio"
+	"context"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/nimling/samna-migrate/internal/config"
+	"github.com/nimling/samna-migrate/internal/db"
+	"github.com/nimling/samna-migrate/internal/hash"
+	"github.com/nimling/samna-migrate/internal/lock"
+	"github.com/nimling/samna-migrate/internal/log"
+	"github.com/nimling/samna-migrate/internal/reconcile"
+	"github.com/nimling/samna-migrate/internal/steps"
+	"github.com/nimling/samna-migrate/pkg/cli"
+	"github.com/spf13/cobra"
+)
+
+var (
+	rebaseReason string
+	rebaseUndo   bool
+	rebaseUndoID int
+)
+
+var rebaseCmd = &cobra.Command{
+	Use:   "rebase [file_path]...",
+	Short: "Mirror the local file structure into samna_migrate as the deployed truth, reversibly",
+	Long: `rebase accepts the on disk content of files as the deployed truth and writes
+both the checksum and the body into samna_migrate. With no arguments it mirrors
+the whole local tree; with file_path arguments it mirrors only those files.
+
+Every mirror first snapshots the prior body into a history row with action_type
+rebase, so the change is reversible. --undo restores the most recent snapshot for
+each target file; --undo-id <history_id> restores one specific snapshot. The diff
+between the prior body and the new body is shown as a git style diff under -v.
+
+Refreshes ` + lock.FileName + ` when it exists.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		ctx := cmd.Context()
+		if envFile != "" {
+			_ = config.LoadDotEnv(envFile)
+		}
+		cfg := config.FromEnv()
+		cfg.StepsFile = stepsFile
+		cfg.DBDir = dbDir
+		d, err := db.Open(ctx, cfg)
+		if err != nil {
+			return err
+		}
+		defer d.Close()
+		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
+			return err
+		}
+
+		targets, err := rebaseTargets(args)
+		if err != nil {
+			return err
+		}
+
+		if rebaseUndo || rebaseUndoID != 0 {
+			return runRebaseUndo(ctx, d, cfg, targets)
+		}
+
+		if err := confirmRebase(cfg, targets); err != nil {
+			return err
+		}
+		return runRebaseMirror(ctx, d, cfg, targets)
+	},
+}
+
+func rebaseTargets(args []string) ([]string, error) {
+	if len(args) > 0 {
+		return args, nil
+	}
+	stepsCfg, err := steps.Load(stepsFile)
+	if err != nil {
+		return nil, err
+	}
+	var rels []string
+	for _, st := range stepsCfg.Steps {
+		files, err := st.ResolveFiles(dbDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range files {
+			rels = append(rels, f.Rel)
+		}
+	}
+	return rels, nil
+}
+
+func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, targets []string) error {
+	host := hostOrLocalhost(cfg)
+	log.Header(fmt.Sprintf("rebase: mirror %d file(s) into %s", len(targets), cfg.PGDatabase))
+
+	rightEdge := 0
+	for _, fp := range targets {
+		if w := 4 + len(fp) + 2 + len("mirrored"); w > rightEdge {
+			rightEdge = w
+		}
+	}
+
+	mirrored := 0
+	for _, fp := range targets {
+		abs := dbDir + "/" + fp
+		diskSha, err := hash.File(abs)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", fp, err)
+		}
+		size, _ := hash.Size(abs)
+		raw, err := os.ReadFile(abs)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", fp, err)
+		}
+		content := string(raw)
+
+		var id, priorSize int
+		var dbSha, state string
+		var priorAppliedSha, priorContent *string
+		var appliedAt *time.Time
+		err = d.Pool.QueryRow(ctx, `
+			SELECT id, sha256, COALESCE(applied_sha256, ''), applied_sql, size_bytes, state, applied_at
+			FROM samna_migrate.file WHERE file_path = $1`, fp).
+			Scan(&id, &dbSha, &priorAppliedSha, &priorContent, &priorSize, &state, &appliedAt)
+		if err != nil {
+			return fmt.Errorf("%s is not in samna_migrate.file: %w", fp, err)
+		}
+
+		priorSha := dbSha
+		if s := strings.TrimSpace(derefStr(priorAppliedSha)); s != "" {
+			priorSha = s
+		}
+		if priorSha == diskSha && state == "applied" {
+			log.Detail("  %s already mirrored, skipping", fp)
+			continue
+		}
+
+		notes := fmt.Sprintf("prior=%s new=%s reason=%s", priorSha, diskSha, rebaseReason)
+		_, err = d.Pool.Exec(ctx, `
+			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
+			                                    applied_sql, action_type, tool_version, executed_by, host, database,
+			                                    duration_ms, success, started_at, ended_at, notes)
+			VALUES ($1, 'rebase', $2, $3, $4, $5, $6, 'rebase', $7, $8, $9, $10, 0, true, now(), now(), $11)`,
+			id, fp, baseName(fp), priorSha, priorSize, priorContent, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
+		if err != nil {
+			return err
+		}
+
+		if err := d.ExecUpgrade(ctx, `
+			UPDATE samna_migrate.file SET
+			    sha256           = $1,
+			    applied_sha256   = $1,
+			    applied_sql      = $2,
+			    size_bytes       = $3,
+			    state            = CASE WHEN state = 'pending' AND applied_at IS NOT NULL THEN 'applied' ELSE state END,
+			    state_changed_at = now(),
+			    updated_at       = now()
+			WHERE id = $4`, diskSha, content, size, id); err != nil {
+			return err
+		}
+
+		log.Step(fp, "mirrored", rightEdge)
+		log.Detail("      %s to %s", shortSha(priorSha), shortSha(diskSha))
+		if log.Level == log.LevelVerbose {
+			reconcile.PrintDiff(derefStr(priorContent), content)
+		}
+		mirrored++
+	}
+
+	log.Plain("")
+	log.Success("mirrored %d file(s)", mirrored)
+	return refreshLock(ctx, d, cfg)
+}
+
+func runRebaseUndo(ctx context.Context, d *db.DB, cfg *config.Config, targets []string) error {
+	host := hostOrLocalhost(cfg)
+	log.Header(fmt.Sprintf("rebase undo: %s", cfg.PGDatabase))
+
+	type snapshot struct {
+		histID   int
+		fileID   int
+		filePath string
+		sha      string
+		content  *string
+		size     int
+	}
+	var snaps []snapshot
+
+	if rebaseUndoID != 0 {
+		var s snapshot
+		err := d.Pool.QueryRow(ctx, `
+			SELECT id, file_id, file_path, sha256, applied_sql, COALESCE(size_bytes, 0)
+			FROM samna_migrate.history
+			WHERE id = $1 AND action_type = 'rebase'`, rebaseUndoID).
+			Scan(&s.histID, &s.fileID, &s.filePath, &s.sha, &s.content, &s.size)
+		if err != nil {
+			return fmt.Errorf("no rebase snapshot with id %d: %w", rebaseUndoID, err)
+		}
+		snaps = append(snaps, s)
+	} else {
+		for _, fp := range targets {
+			var s snapshot
+			err := d.Pool.QueryRow(ctx, `
+				SELECT id, file_id, file_path, sha256, applied_sql, COALESCE(size_bytes, 0)
+				FROM samna_migrate.history
+				WHERE file_path = $1 AND action_type = 'rebase'
+				ORDER BY id DESC LIMIT 1`, fp).
+				Scan(&s.histID, &s.fileID, &s.filePath, &s.sha, &s.content, &s.size)
+			if err != nil {
+				log.Detail("  %s has no rebase snapshot, skipping", fp)
+				continue
+			}
+			snaps = append(snaps, s)
+		}
+	}
+
+	if len(snaps) == 0 {
+		log.Success("nothing to undo")
+		return nil
+	}
+
+	rightEdge := 0
+	for _, s := range snaps {
+		if w := 4 + len(s.filePath) + 2 + len("restored"); w > rightEdge {
+			rightEdge = w
+		}
+	}
+
+	restored := 0
+	for _, s := range snaps {
+		var curContent *string
+		_ = d.Pool.QueryRow(ctx, `SELECT applied_sql FROM samna_migrate.file WHERE id = $1`, s.fileID).Scan(&curContent)
+
+		if err := d.ExecUpgrade(ctx, `
+			UPDATE samna_migrate.file SET
+			    sha256         = $1,
+			    applied_sha256 = $1,
+			    applied_sql    = $2,
+			    size_bytes     = $3,
+			    updated_at     = now()
+			WHERE id = $4`, s.sha, s.content, s.size, s.fileID); err != nil {
+			return err
+		}
+
+		notes := fmt.Sprintf("restored %s to %s", s.filePath, shortSha(s.sha))
+		_, err := d.Pool.Exec(ctx, `
+			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256,
+			                                    applied_sql, action_type, tool_version, executed_by, host, database,
+			                                    duration_ms, success, started_at, ended_at, undoing_history_id, notes)
+			VALUES ($1, 'rebase', $2, $3, $4, $5, 'rebase_undo', $6, $7, $8, $9, 0, true, now(), now(), $10, $11)`,
+			s.fileID, s.filePath, baseName(s.filePath), s.sha, s.content, cli.Version, cfg.PGUser, host, cfg.PGDatabase, s.histID, notes)
+		if err != nil {
+			return err
+		}
+
+		log.Step(s.filePath, "restored", rightEdge)
+		log.Detail("      to %s from snapshot %d", shortSha(s.sha), s.histID)
+		if log.Level == log.LevelVerbose {
+			reconcile.PrintDiff(derefStr(curContent), derefStr(s.content))
+		}
+		restored++
+	}
+
+	log.Plain("")
+	log.Success("restored %d file(s)", restored)
+	return refreshLock(ctx, d, cfg)
+}
+
+func refreshLock(ctx context.Context, d *db.DB, cfg *config.Config) error {
+	refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, cli.Version)
+	if err != nil {
+		return err
+	}
+	if refreshed {
+		log.Info("refreshed %s", lock.Path(dbDir))
+	}
+	return nil
+}
+
+func confirmRebase(cfg *config.Config, files []string) error {
+	if assumeYes {
+		return nil
+	}
+	fi, _ := os.Stdin.Stat()
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		return fmt.Errorf("rebase requires an interactive tty; use --yes to bypass")
+	}
+	summary := fmt.Sprintf("%d file(s)", len(files))
+	if len(files) <= 8 {
+		summary = strings.Join(files, ", ")
+	}
+	fmt.Printf("\nrebase mirrors local files into samna_migrate as the deployed truth.\n  database: %s@%s\n  files:    %s\n\nType %s to confirm: ",
+		cfg.PGDatabase, hostOrLocalhost(cfg), summary, cfg.PGDatabase)
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(line) != cfg.PGDatabase {
+		return fmt.Errorf("confirmation mismatch, aborting")
+	}
+	return nil
+}
+
+func hostOrLocalhost(cfg *config.Config) string {
+	if cfg.PGHost == "" {
+		return "localhost"
+	}
+	return cfg.PGHost
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+func baseName(fp string) string {
+	if i := strings.LastIndex(fp, "/"); i >= 0 {
+		return fp[i+1:]
+	}
+	return fp
+}
+
+func init() {
+	rebaseCmd.Flags().StringVar(&rebaseReason, "reason", "", "Why the files are being mirrored, recorded in history")
+	rebaseCmd.Flags().BoolVar(&rebaseUndo, "undo", false, "Restore the most recent rebase snapshot for each target file")
+	rebaseCmd.Flags().IntVar(&rebaseUndoID, "undo-id", 0, "Restore one specific rebase snapshot by history id")
+	rootCmd.AddCommand(rebaseCmd)
+}

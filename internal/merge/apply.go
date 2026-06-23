@@ -18,8 +18,8 @@ import (
 	"github.com/nimling/samna-migrate/internal/hash"
 	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
+	"github.com/nimling/samna-migrate/internal/reconcile"
 	"github.com/nimling/samna-migrate/internal/steps"
-	"github.com/nimling/samna-migrate/internal/verify"
 )
 
 func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, tag, force bool) error {
@@ -29,21 +29,21 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 	}
 
 	if !force {
-		m, err := verify.ReadManifest(upgradedDir)
+		m, err := reconcile.ReadManifest(upgradedDir)
 		if err != nil {
-			return fmt.Errorf(".upgraded/ carries no verify proof. Run smig verify first or pass --force")
+			return fmt.Errorf(".upgraded/ carries no reconcile proof. Run smig reconcile first or pass --force")
 		}
-		sha, err := verify.TreeSha(upgradedDir)
+		sha, err := reconcile.TreeSha(upgradedDir)
 		if err != nil {
 			return err
 		}
 		if m.UpgradedSha != sha {
-			return fmt.Errorf("verify proof is stale, .upgraded/ changed after the last smig verify. Rerun smig verify or pass --force")
+			return fmt.Errorf("reconcile proof is stale, .upgraded/ changed after the last smig reconcile. Rerun smig reconcile or pass --force")
 		}
 		if !m.AllPassed() {
-			return fmt.Errorf("verify proof records a failed verdict. Fix the tree, rerun smig verify, or pass --force")
+			return fmt.Errorf("reconcile proof records a failed verdict. Fix the tree, rerun smig reconcile, or pass --force")
 		}
-		log.Success("verify proof accepted, verified at %s against %s", m.VerifiedAt, m.SourceDatabase)
+		log.Success("reconcile proof accepted, verified at %s against %s", m.VerifiedAt, m.SourceDatabase)
 	}
 
 	sourceRoot := filepath.Dir(cfg.StepsFile)

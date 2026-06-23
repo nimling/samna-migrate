@@ -1,4 +1,4 @@
-package verify
+package reconcile
 
 import (
 	"context"
@@ -28,9 +28,9 @@ func startContainer(ctx context.Context, base *config.Config, image string) (*co
 	}
 	password := base.PGPassword
 	if password == "" {
-		password = "smigverify"
+		password = "smigreconcile"
 	}
-	name := fmt.Sprintf("smig-verify-%d", time.Now().UnixNano())
+	name := fmt.Sprintf("smig-reconcile-%d", time.Now().UnixNano())
 	args := []string{
 		"run", "--detach", "--rm", "--name", name,
 		"--publish", fmt.Sprintf("127.0.0.1:%d:5432", port),

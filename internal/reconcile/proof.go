@@ -1,4 +1,4 @@
-package verify
+package reconcile
 
 import (
 	"context"
@@ -149,14 +149,14 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 
 	allPassed := verdicts.Bootstrap && verdicts.Equality && verdicts.Determinism
 	if !allPassed {
-		return fmt.Errorf("verify failed")
+		return fmt.Errorf("reconcile proof failed")
 	}
 	if opts.DryRun {
 		log.Info("dry run: proof manifest not written")
 		return nil
 	}
 	if upgradedDir == "" {
-		log.Success("verify passed against the --db-dir tree")
+		log.Success("reconcile proof passed against the --db-dir tree")
 		return nil
 	}
 

@@ -1,4 +1,4 @@
-package verify
+package reconcile
 
 import (
 	"os"
@@ -22,7 +22,7 @@ func TestTreeShaStableAndSensitive(t *testing.T) {
 		t.Errorf("TreeSha not deterministic: %s vs %s", h1, h2)
 	}
 
-	os.WriteFile(filepath.Join(dir, "verify.json"), []byte(`{"x":1}`), 0o644)
+	os.WriteFile(filepath.Join(dir, "reconcile.json"), []byte(`{"x":1}`), 0o644)
 	h3, _ := TreeSha(dir)
 	if h3 != h1 {
 		t.Errorf("TreeSha must ignore the manifest file")

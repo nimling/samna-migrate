@@ -22,6 +22,9 @@ var upgradeTo3SQL string
 //go:embed sql/upgrade_to_4.sql
 var upgradeTo4SQL string
 
+//go:embed sql/upgrade_to_5.sql
+var upgradeTo5SQL string
+
 // Chain walks the schema upgrade chain from current to target.
 func Chain(ctx context.Context, d *db.DB, toolVersion string) error {
 	current, err := schema.GetSchemaVersion(ctx, d)
@@ -41,6 +44,8 @@ func Chain(ctx context.Context, d *db.DB, toolVersion string) error {
 			sql = upgradeTo3SQL
 		case 4:
 			sql = upgradeTo4SQL
+		case 5:
+			sql = upgradeTo5SQL
 		default:
 			return fmt.Errorf("no upgrade step defined for %d", next)
 		}
@@ -67,4 +72,4 @@ func Chain(ctx context.Context, d *db.DB, toolVersion string) error {
 	return nil
 }
 
-const TargetVersion = 4
+const TargetVersion = 5

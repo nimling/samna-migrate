@@ -55,11 +55,11 @@ func showCounts(ctx context.Context, d *db.DB) {
 		return
 	}
 	defer rows.Close()
-	fmt.Println("  file counts:")
+	log.Section("file counts", "", 0)
 	for rows.Next() {
 		var t, s string
 		var c int
 		rows.Scan(&t, &s, &c)
-		fmt.Printf("    %-12s %-10s %d\n", t, s, c)
+		log.Plain("  %-12s %-10s %d", t, s, c)
 	}
 }

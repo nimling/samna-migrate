@@ -11,7 +11,7 @@ When the user says "deploy" in this repo, execute these steps in order. Stop on 
 
 ## 1. Write or update tests for meaningful parts of the change
 
-Look at the diff with `git diff` and `git status` and identify the observable surface. Pure logic gets a package level `_test.go` beside the code, postgres dependent paths get a case under `test/integration/`, CLI level behaviour gets a case under `test/e2e/`. Trivial moves and rename only diffs do not need a new test. Anything that changes a command's exit behaviour, a ledger write, a preflight verdict, a verify verdict, a lockfile shape, or a samna_migrate schema step MUST be covered.
+Look at the diff with `git diff` and `git status` and identify the observable surface. Pure logic gets a package level `_test.go` beside the code, postgres dependent paths get a case under `test/integration/`, CLI level behaviour gets a case under `test/e2e/`. Trivial moves and rename only diffs do not need a new test. Anything that changes a command's exit behaviour, a ledger write, a preflight verdict, a reconcile verdict, a lockfile shape, or a samna_migrate schema step MUST be covered.
 
 The test must assert the observable contract, not the internal call graph.
 
@@ -26,7 +26,7 @@ Failure: report the failing names and stop. Do not commit, do not bump.
 
 ## 3. Run the docker suites when the change warrants it
 
-When the diff touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/verify`, or `internal/schema`:
+When the diff touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/reconcile`, or `internal/schema`:
 
 ```
 just test-integration

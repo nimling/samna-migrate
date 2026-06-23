@@ -54,9 +54,11 @@ func ListPending(ctx context.Context, d *db.DB) ([]Pending, error) {
 // File runs a single pending file via psql with the step's `pre` SQL prefix.
 func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string) error {
 	abs := dbDir + "/" + p.FilePath
-	if _, err := os.Stat(abs); err != nil {
+	raw, err := os.ReadFile(abs)
+	if err != nil {
 		return fmt.Errorf("file missing on disk: %s", abs)
 	}
+	content := string(raw)
 	yamlSha, _ := schema.GetYAMLSha(ctx, d)
 
 	start := time.Now()
@@ -89,20 +91,20 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 	}
 
 	var histID int
-	err := d.Pool.QueryRow(ctx, `
+	err = d.Pool.QueryRow(ctx, `
 		INSERT INTO samna_migrate.history
 		    (file_id, step_name, step_type, slug, version, file_name, file_path,
 		     sha256, size_bytes, attempt, action_type, tool_version,
 		     executed_by, host, database, duration_ms, success, error_message,
-		     started_at, ended_at, position, yaml_sha256, applied_at)
+		     started_at, ended_at, position, yaml_sha256, applied_sql, applied_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'apply', $11,
 		        $12, $13, $14, $15, $16, NULLIF($17, ''),
-		        $18, $19, $20, NULLIF($21, ''), now())
+		        $18, $19, $20, NULLIF($21, ''), $22, now())
 		RETURNING id`,
 		p.ID, p.StepName, p.StepType, p.Slug, p.Version, p.FileName, p.FilePath,
 		p.Sha, p.Size, attempt, toolVersion,
 		executedBy, host, database, durMs, success, errMsg,
-		start, end, p.Position, yamlSha,
+		start, end, p.Position, yamlSha, content,
 	).Scan(&histID)
 	if err != nil {
 		return fmt.Errorf("write history: %w", err)
@@ -116,16 +118,17 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 			    applied_at              = now(),
 			    applied_history_id      = $1,
 			    applied_sha256          = $2,
+			    applied_sql             = $3,
 			    applied_position        = position,
 			    last_applied_at         = now(),
 			    last_applied_history_id = $1,
 			    last_attempt_at         = now(),
 			    last_attempt_status     = 'success',
 			    last_attempt_history_id = $1,
-			    attempt_count           = $3,
-			    attempts_count          = $3,
+			    attempt_count           = $4,
+			    attempts_count          = $4,
 			    updated_at              = now()
-			WHERE id = $4`, histID, p.Sha, attempt, p.ID)
+			WHERE id = $5`, histID, p.Sha, content, attempt, p.ID)
 		if err != nil {
 			return fmt.Errorf("mark applied: %w", err)
 		}

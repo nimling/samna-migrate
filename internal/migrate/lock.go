@@ -15,7 +15,7 @@ var lockCmd = &cobra.Command{
 	Long: `Captures file_path and sha256 for every applied row in samna_migrate.file
 into ` + lock.FileName + ` inside the database directory. Commit the file.
 smig lint then rejects any edit to a locked file, which catches checksum
-drift at the keystroke instead of at the deploy. smig up, smig rebaseline,
+drift at the keystroke instead of at the deploy. smig up, smig rebase,
 and smig merge --apply refresh the lockfile automatically when it exists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()

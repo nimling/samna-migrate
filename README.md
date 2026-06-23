@@ -1,8 +1,8 @@
 # samna-migrate (smig)
 
-Database migration runner. Walks a `migrate.yml` step file, applies SQL files in order, records every attempt in `samna_migrate.history`, and gates CI behind an operator-acknowledged local `upgrade` step.
+Database migration runner. Walks a `migrate.yml` step file, applies SQL files in order, records every attempt in `samna_migrate.history`, and gates CI behind an operator acknowledged local `upgrade` step.
 
-The CLI binary is `smig`.
+The CLI binary is `smig`. The help screen animates the smig logo on a terminal and prints it static when piped.
 
 ## Commands
 
@@ -10,34 +10,49 @@ The CLI binary is `smig`.
 smig up         Apply pending migrations after a strict boot check.
 smig upgrade    Walk the samna_migrate schema chain and reconcile state. Local only.
 smig check      Preflight only. No writes. Reports drift.
-smig stat       Print current state and per-step file counts.
+smig stat       Print current state and per step file counts.
 smig merge      Rebase live SQL into .upgraded/; --apply moves it in; --revert restores a snapshot.
-smig verify     Prove .upgraded/ in a disposable postgres container. Local only.
+smig reconcile  Audit the local tree against the deployed state, then prove .upgraded/ in a container.
 smig lint       Static checks on every step file. No database needed.
 smig lock       Write the applied ledger to samna_migrate.lock.json for lint to guard.
-smig rebaseline Accept edited applied files as the new checksum, audited with a reason.
+smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
+smig down       Revert applied migrations with an Anthropic agent that synthesizes the down SQL. Local only.
 ```
 
-## Verify
+## Deployed bodies
 
-`smig verify` builds a candidate source tree from `.upgraded/` overlaid on the current tree, bootstraps it into a disposable postgres container started via docker, and records three verdicts: `bootstrap` (the candidate builds a fresh database without errors), `equality` (the fresh database matches the live database object for object across types, tables, constraints, indexes, views, functions, triggers, sequences, grants, and comments), and `reapply` (every base and seed file applies a second time without errors and without changing any object). All three passing writes `.upgraded/verify.json`, the proof `smig merge --apply` requires unless `--force` is given. `--dry-run` reports verdicts without writing the proof. `--keep` leaves the container and candidate tree in place for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
+Every successful apply records both the sha256 and the full deployed `.sql` body into `samna_migrate.file.applied_sql` and `samna_migrate.history.applied_sql`. The stored body is the raw on disk content, so `smig reconcile` compares the deployed bytes against the working tree line for line.
+
+## Reconcile
+
+`smig reconcile` runs two phases.
+
+The audit compares every local `.sql` file against the body stored in `samna_migrate` at apply time. It classifies each file as added, dropped, changed, or reordered, and uses the SQL scanner to name the exact function, table, or statement that differs with its file and line. The difference renders as a git style diff with green additions, red removals, and cyan hunk headers. Normal output lists the per object changes; `-v` adds the diff hunks; `-vv` dumps the full bodies on both sides. The audit reports every difference and only stops at the first one when `--stop-one-error` is given.
+
+The proof builds a candidate source tree from `--db-dir`, overlaying `.upgraded/` when it is present, bootstraps it into a disposable postgres container started via docker, and records three verdicts: `bootstrap` that the candidate builds a fresh database without errors, `equality` that the fresh database matches the live database object for object across types, tables, constraints, indexes, views, functions, triggers, sequences, grants, and comments, and `determinism` that a second independent bootstrap matches the first. All three passing writes `.upgraded/reconcile.json`, the proof `smig merge --apply` requires unless `--force` is given.
+
+`--no-proof` runs the audit alone without docker. `--dry-run` reports verdicts without writing the proof. `--keep` leaves the container and candidate tree in place for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
 
 ## Drift guarding
 
 `smig lint` walks every step file and reports filename grammar violations on any step, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` existence guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero; `--strict` promotes warnings. With `samna_migrate.lock.json` present, lint also rejects any locked file that was edited or deleted, which catches checksum tampering at the keystroke instead of at the deploy preflight.
 
-`smig lock` writes the lockfile from the applied rows in `samna_migrate.file`. Commit it. `smig up`, `smig rebaseline`, and `smig merge --apply` refresh it automatically when it exists.
+`smig lock` writes the lockfile from the applied rows in `samna_migrate.file`. Commit it. `smig up`, `smig rebase`, and `smig merge --apply` refresh it automatically when it exists.
 
-`smig rebaseline <file_path>... --reason <text>` is the supported way to bless an intentional edit to an applied file: it updates `samna_migrate.file` to the disk sha and writes a history row with `action_type = 'rebaseline'` carrying the prior sha, the new sha, and the reason. Confirmation prompts for the database name; `--yes` bypasses.
+`smig rebase` mirrors the local file structure into `samna_migrate` as the deployed truth. With no arguments it mirrors the whole tree; with file paths it mirrors only those files. Each mirror writes the disk sha and body into `samna_migrate.file` and first snapshots the prior body into a history row with `action_type = 'rebase'`, so the change is reversible. `--undo` restores the most recent snapshot for each target file and `--undo-id <history_id>` restores one specific snapshot, both recorded with `action_type = 'rebase_undo'`. The diff between the prior body and the new body shows under `-v`. Confirmation prompts for the database name; `--yes` bypasses.
 
-Preflight treats a drifted base or seed file as a replay: the row flips back to pending and the next `smig up` re-applies it. A drifted applied migration stays fatal. An applied migration missing from disk is fatal; a missing base or seed file warns.
+Preflight treats a drifted base or seed file as a replay: the row flips back to pending and the next `smig up` applies it again. A drifted applied migration stays fatal. An applied migration missing from disk is fatal; a missing base or seed file warns.
 
 ## Workflow
 
 1. Local operator runs `smig upgrade` against the target env. Confirmation prompt asks for the database name.
 2. Phase A walks the schema chain to the current `SCHEMA_VERSION`. Phase B writes `yaml_sha256` and `tool_version` into `samna_migrate.state`.
-3. CI (or any non-local caller) runs `smig up`. The strict `boot_check` requires equality on `schema_version`, `tool_version`, `yaml_sha256` and refuses to apply if anything is behind.
+3. CI or any non local caller runs `smig up`. The strict `boot_check` requires equality on `schema_version`, `tool_version`, `yaml_sha256` and refuses to apply if anything is behind.
 4. `smig lint` runs in PR CI and pre commit with the committed lockfile, so locked file edits and non idempotent SQL never reach a deploy.
+
+## Verbosity
+
+Every command shares one output vocabulary. The default level prints headers, section groups, per file steps, and a success line. `-s` suppresses all output except errors. `-v` adds detail lines and diff hunks. `-vv` dumps every SQL statement and full file bodies. Usage text appears only on `-h` or `--help`, never after a command or on failure.
 
 ## Building
 
@@ -55,13 +70,19 @@ The repo carries a full bookable database tree twice under `database/`: `databas
 
 ```
 cmd/                  entrypoint
-internal/migrate/     cobra commands (up, upgrade, stat, check)
-internal/config/      env + dotenv loader
-internal/db/          pgxpool wrapper + psql delegate
+internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, lock, rebase, down
+internal/config/      env and dotenv loader
+internal/db/          pgxpool wrapper and psql delegate
 internal/schema/      samna_migrate.* state helpers
-internal/upgrade/     schema chain + embedded SQL
-internal/preflight/   disk vs ledger scanner
-internal/apply/       per-file apply + history writer
+internal/upgrade/     schema chain and embedded SQL
+internal/preflight/   disk against ledger scanner
+internal/apply/        per file apply and history writer
+internal/reconcile/   file and object audit, git style diff, container proof
+internal/sqlscan/     SQL statement and object scanner
+internal/merge/       rebase live SQL into .upgraded/
+internal/lint/        static step file checks
+internal/lock/        lockfile reader and writer
 internal/steps/       migrate.yml parser
-pkg/cli/              version constants
+internal/log/         ansi styled output and diff rendering
+pkg/cli/              version and schema version constants
 ```

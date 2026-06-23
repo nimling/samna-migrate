@@ -26,7 +26,6 @@ var checkCmd = &cobra.Command{
 		}
 		defer d.Close()
 		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
-			log.Err("%v", err)
 			return err
 		}
 		stepsCfg, err := steps.Load(stepsFile)
@@ -37,13 +36,17 @@ var checkCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		log.Header("migrate check: " + cfg.PGDatabase)
 		r, err := preflight.Scan(ctx, d, snap, stepsCfg, dbDir)
 		if err != nil {
 			return err
 		}
-		log.Plain("  new=%d  unchanged=%d  drift=%d  missing=%d",
+		log.Detail("new=%d  unchanged=%d  drift=%d  missing=%d",
 			r.FilesNew, r.FilesUnchanged, r.FilesDrift, r.FilesMissing)
-		log.Success("preflight passed")
+		if r.FilesDrift > 0 || r.FilesMissing > 0 {
+			log.Warn("drift=%d  missing=%d", r.FilesDrift, r.FilesMissing)
+		}
+		log.Success("preflight passed: %d new, %d unchanged", r.FilesNew, r.FilesUnchanged)
 		return nil
 	},
 }

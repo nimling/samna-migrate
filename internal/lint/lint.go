@@ -80,7 +80,7 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 					continue
 				}
 				if sha != e.Sha256 {
-					r.add(e.FilePath, "error", "locked file modified after apply. Use smig rebaseline with a reason, never edit in place")
+					r.add(e.FilePath, "error", "locked file modified after apply. Use smig rebase, never edit in place")
 				}
 			}
 		}
