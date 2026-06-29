@@ -19,6 +19,10 @@ smig rebase     Mirror local files into samna_migrate as the deployed truth, rev
 smig down       Revert applied migrations with an Anthropic agent that synthesizes the down SQL. Local only.
 ```
 
+## Agent guide
+
+An agent facing guide to the CLI lives at [.claude/skills/smig/SKILL.md](.claude/skills/smig/SKILL.md). It explains every command, when to reach for each, how to turn the `reconcile --db --json` report into hand applied SQL, and the safety rules that bound writes against a live database.
+
 ## Deployed bodies
 
 Every successful apply records both the sha256 and the full deployed `.sql` body into `samna_migrate.file.applied_sql` and `samna_migrate.history.applied_sql`. The stored body is the raw on disk content, so `smig reconcile` compares the deployed bytes against the working tree line for line.

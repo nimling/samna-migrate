@@ -27,6 +27,7 @@ var (
 	rebaseReason string
 	rebaseUndo   bool
 	rebaseUndoID int
+	rebasePrune  bool
 )
 
 var rebaseCmd = &cobra.Command{
@@ -40,6 +41,12 @@ Every mirror first snapshots the prior body into a history row with action_type
 rebase, so the change is reversible. --undo restores the most recent snapshot for
 each target file; --undo-id <history_id> restores one specific snapshot. The diff
 between the prior body and the new body is shown as a git style diff under -v.
+
+--prune folds every applied migration entry that is absent from the source tree,
+the state a history squash leaves behind, so up stops refusing on a file the
+ledger applied but the tree no longer carries. It folds only orphaned migration
+entries and never touches pending files. Run reconcile --db first to confirm the
+folded migrations' objects are still produced by the tree.
 
 Refreshes ` + lock.FileName + ` when it exists.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -65,6 +72,11 @@ Refreshes ` + lock.FileName + ` when it exists.`,
 		if err != nil {
 			return err
 		}
+
+		if rebasePrune {
+			return runRebasePrune(ctx, d, cfg, stepsCfg)
+		}
+
 		targets, err := rebaseTargets(args, stepsCfg)
 		if err != nil {
 			return err
@@ -326,6 +338,121 @@ func runRebaseUndo(ctx context.Context, d *db.DB, cfg *config.Config, targets []
 	return refreshLock(ctx, d, cfg)
 }
 
+func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config) error {
+	host := hostOrLocalhost(cfg)
+	disk := map[string]bool{}
+	for _, st := range stepsCfg.Steps {
+		files, err := st.ResolveFiles(dbDir)
+		if err != nil {
+			return err
+		}
+		for _, f := range files {
+			disk[f.Rel] = true
+		}
+	}
+
+	type orphan struct {
+		id      int
+		path    string
+		sha     string
+		content *string
+		size    int
+	}
+	rows, err := d.Pool.Query(ctx, `
+		SELECT id, file_path, COALESCE(applied_sha256, sha256, ''), applied_sql, COALESCE(size_bytes, 0)
+		FROM samna_migrate.file
+		WHERE state = 'applied' AND step_type = 'migration' AND removed_at IS NULL
+		ORDER BY position`)
+	if err != nil {
+		return err
+	}
+	var orphans []orphan
+	for rows.Next() {
+		var o orphan
+		if err := rows.Scan(&o.id, &o.path, &o.sha, &o.content, &o.size); err != nil {
+			rows.Close()
+			return err
+		}
+		if !disk[o.path] {
+			orphans = append(orphans, o)
+		}
+	}
+	rows.Close()
+
+	if len(orphans) == 0 {
+		log.Success("no orphaned migration entries to prune")
+		return nil
+	}
+
+	log.Header(fmt.Sprintf("rebase --prune: fold %d orphaned migration entry(s) in %s", len(orphans), cfg.PGDatabase))
+	rightEdge := 0
+	paths := make([]string, len(orphans))
+	for i, o := range orphans {
+		paths[i] = o.path
+		if w := 4 + len(o.path) + 2 + len("folded"); w > rightEdge {
+			rightEdge = w
+		}
+	}
+
+	if err := confirmPrune(cfg, paths); err != nil {
+		return err
+	}
+
+	pruned := 0
+	for _, o := range orphans {
+		if err := d.ExecUpgrade(ctx, `
+			UPDATE samna_migrate.file SET
+			    state            = 'folded',
+			    folded_at        = now(),
+			    state_changed_at = now(),
+			    updated_at       = now()
+			WHERE id = $1`, o.id); err != nil {
+			return err
+		}
+		notes := fmt.Sprintf("folded orphaned migration absent from source tree reason=%s", rebaseReason)
+		_, err := d.Pool.Exec(ctx, `
+			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
+			                                    applied_sql, action_type, tool_version, executed_by, host, database,
+			                                    duration_ms, success, started_at, ended_at, notes)
+			VALUES ($1, 'rebase', $2, $3, $4, $5, $6, 'fold', $7, $8, $9, $10, 0, true, now(), now(), $11)`,
+			o.id, o.path, baseName(o.path), o.sha, o.size, o.content, cli.Version, cfg.PGUser, host, cfg.PGDatabase, notes)
+		if err != nil {
+			return err
+		}
+		log.Step(o.path, "folded", rightEdge)
+		pruned++
+	}
+
+	log.Plain("")
+	log.Success("folded %d orphaned entry(s)", pruned)
+	return refreshLock(ctx, d, cfg)
+}
+
+func confirmPrune(cfg *config.Config, files []string) error {
+	if assumeYes {
+		return nil
+	}
+	fi, _ := os.Stdin.Stat()
+	if (fi.Mode() & os.ModeCharDevice) == 0 {
+		return fmt.Errorf("rebase --prune requires an interactive tty; use --yes to bypass")
+	}
+	summary := fmt.Sprintf("%d file(s)", len(files))
+	if len(files) <= 8 {
+		summary = strings.Join(files, ", ")
+	}
+	fmt.Printf("\nrebase --prune folds applied migration entries that are absent from the source tree.\n  database: %s@%s\n  entries:  %s\n\nType %s to confirm: ",
+		cfg.PGDatabase, hostOrLocalhost(cfg), summary, cfg.PGDatabase)
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(line) != cfg.PGDatabase {
+		return fmt.Errorf("confirmation mismatch, aborting")
+	}
+	return nil
+}
+
 func refreshLock(ctx context.Context, d *db.DB, cfg *config.Config) error {
 	refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, cli.Version)
 	if err != nil {
@@ -387,5 +514,6 @@ func init() {
 	rebaseCmd.Flags().StringVar(&rebaseReason, "reason", "", "Why the files are being mirrored, recorded in history")
 	rebaseCmd.Flags().BoolVar(&rebaseUndo, "undo", false, "Restore the most recent rebase snapshot for each target file")
 	rebaseCmd.Flags().IntVar(&rebaseUndoID, "undo-id", 0, "Restore one specific rebase snapshot by history id")
+	rebaseCmd.Flags().BoolVar(&rebasePrune, "prune", false, "Fold applied migration entries absent from the source tree, clearing the boot blocker a history squash leaves")
 	rootCmd.AddCommand(rebaseCmd)
 }

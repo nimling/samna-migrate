@@ -202,3 +202,68 @@ func TestSmigUpIsNoopAfterUpgrade(t *testing.T) {
 		t.Errorf("applied count regressed: before=%d after=%d", beforeApplied, afterApplied)
 	}
 }
+
+func execUpgrade(ctx context.Context, p *pgxpool.Pool, sql string, args ...any) error {
+	tx, err := p.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `SET LOCAL samna_migrate.upgrade_mode = 'true'`); err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+	if _, err := tx.Exec(ctx, sql, args...); err != nil {
+		tx.Rollback(ctx)
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func TestSmigRebasePruneFoldsOrphan(t *testing.T) {
+	p := dial(t)
+	defer p.Close()
+	ctx := context.Background()
+	if _, _, err := runSmig(t, "upgrade", "--yes"); err != nil {
+		t.Fatalf("upgrade prep failed: %v", err)
+	}
+
+	const orphan = "migrations/V9999.0__prune_e2e_orphan.sql"
+	if err := execUpgrade(ctx, p, `DELETE FROM samna_migrate.file WHERE file_path = $1`, orphan); err != nil {
+		t.Fatalf("pre-clean orphan: %v", err)
+	}
+	_, err := p.Exec(ctx, `
+		INSERT INTO samna_migrate.file
+		    (step_name, step_type, slug, version, file_name, file_path, sha256, applied_sha256,
+		     state, position, applied_position, applied_at, first_seen, discovered_at, state_changed_at, updated_at)
+		VALUES ('Migrations', 'migration', 'migration', '9999.0', 'V9999.0__prune_e2e_orphan.sql', $1,
+		        'deadbeef', 'deadbeef', 'applied',
+		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
+		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
+		        now(), now(), now(), now(), now())`, orphan)
+	if err != nil {
+		t.Fatalf("insert orphan: %v", err)
+	}
+	defer execUpgrade(ctx, p, `DELETE FROM samna_migrate.file WHERE file_path = $1`, orphan)
+
+	stdout, stderr, err := runSmig(t, "rebase", "--prune", "--yes")
+	if err != nil {
+		t.Fatalf("rebase --prune failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout+stderr, "folded") {
+		t.Errorf("expected folded marker: %s", stdout+stderr)
+	}
+
+	var state string
+	if err := p.QueryRow(ctx, `SELECT state FROM samna_migrate.file WHERE file_path = $1`, orphan).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "folded" {
+		t.Errorf("orphan state = %q, want folded", state)
+	}
+
+	var nFold int
+	p.QueryRow(ctx, `SELECT count(*) FROM samna_migrate.history WHERE file_path = $1 AND action_type = 'fold'`, orphan).Scan(&nFold)
+	if nFold < 1 {
+		t.Errorf("expected a fold history row for the orphan")
+	}
+}
