@@ -1,11 +1,11 @@
 {
-  "generated_at": "2026-06-13T09:46:44Z",
+  "generated_at": "2026-06-30T13:46:01Z",
   "database": "bookable",
-  "tool_version": "b0e7b09-dirty",
+  "tool_version": "v1.3.9",
   "files": [
     {
       "file_path": "base/V1.0__baseline.sql",
-      "sha256": "bac31317eae3dcad65c73be4f08a69e154fb3c5d6c9457762033058666dbbf6b"
+      "sha256": "245ef425a1f3195998453649a81578d1d36d3796b8aedc30cbf3040c2876cd89"
     },
     {
       "file_path": "base/V1.10__search.sql",
@@ -17,7 +17,7 @@
     },
     {
       "file_path": "base/V1.2__server_functions.sql",
-      "sha256": "eab7be060b5677c80757ab573496df74229541ea34d6199a1919e232584193d4"
+      "sha256": "83dfc5ebcf2acc4cb56e412c5491fe8a34189a1cfdee8bcdb4b9d05d7d45dcbb"
     },
     {
       "file_path": "base/V1.4__timeslots.sql",
@@ -25,7 +25,7 @@
     },
     {
       "file_path": "base/V1.6__activity.sql",
-      "sha256": "d5b92199ea8e611bec31eda6620ee0e7999499a76a6a7b8fc5d706a945122b57"
+      "sha256": "99746ae33f9fe0cd044c78567a09d0b2d4e6c7b1ab7dfbd16b4d5e8c113b8ec2"
     },
     {
       "file_path": "claimius/V0.0__roles.sql",
@@ -41,7 +41,7 @@
     },
     {
       "file_path": "claimius/V2.2__functions_internal.sql",
-      "sha256": "21a03b2c6d1517ea91024bc79b90330b397a99b8e73c640d98b9a0017cd1e2b4"
+      "sha256": "10c42cf8e33c20520104770a7f496032b3c94eb173e211bd98ef77d61ee51e56"
     },
     {
       "file_path": "claimius/V2.3__functions_access.sql",
@@ -49,7 +49,7 @@
     },
     {
       "file_path": "claimius/V2.4__functions_external.sql",
-      "sha256": "2921b93b8dbd957ece8fb40e0e243b8a0def5f51ad55a6343b36904332bffe14"
+      "sha256": "32b368782029d968ed2837169becc2db624731214653c27296b1e4581f9b1172"
     },
     {
       "file_path": "claimius/V3.0__triggers.sql",
@@ -58,6 +58,14 @@
     {
       "file_path": "claimius/V4.0__init.sql",
       "sha256": "6e180889ba8b4577aaeb64eb99c19d722087275a7609db10c2052554050e6784"
+    },
+    {
+      "file_path": "migrations/V1.0__claimius_refresh_user_users_concurrency.sql",
+      "sha256": "cd7af85f862080c12bbb2ef8fb0bb11e5495f7d05f8af40037cc9451c3eb3d74"
+    },
+    {
+      "file_path": "migrations/V1.1__claimius_get_claims_by_object_distinct.sql",
+      "sha256": "7d6391426070ac0aa0f5486a12164e5df7e5a7e4df2eef5abb90890c2ddc1010"
     },
     {
       "file_path": "migrations/V1.2__base_search_fix.sql",
@@ -69,7 +77,7 @@
     },
     {
       "file_path": "migrations/V2.0__claimius_get_descendants.sql",
-      "sha256": "d6c38da95f2c18198b5c7194e9438e90338371631c4a5ad5c7fcf229f3420213"
+      "sha256": "06ca8407e93e60e191d5860564d75b0a8598e48bf3c05cb9a756b04a7a4e217a"
     },
     {
       "file_path": "migrations/V2.1__claimius_calc_hierarchical_access.sql",
@@ -84,6 +92,18 @@
       "sha256": "f2bdd06c594ced16236290c28254c7f616c631892f9ea654fb3fccb42356a761"
     },
     {
+      "file_path": "migrations/V2.4__base_feedback_rating_nullable.sql",
+      "sha256": "42963d05cb4a6b8b1feb25bb04910dbb73559d6f6dec51d0c4bc9dbefbd4090c"
+    },
+    {
+      "file_path": "migrations/V2.5__base_code_object_link.sql",
+      "sha256": "47c4885e6c0da2005fb2b9dad096f69df860838b75ad4d608975b30b7a0af0bf"
+    },
+    {
+      "file_path": "migrations/V2.6__base_code_redeem.sql",
+      "sha256": "aa55d3fdd0d01709e2c8f10c3eab340f49ccac7550b89712a38e553e379ea0fe"
+    },
+    {
       "file_path": "migrations/V2.7__base_bookable_external_id.sql",
       "sha256": "2a606a2ec7c4fef96b98515ac97f07ea656791bdad8673bfee788bda31aed8d7"
     },
@@ -93,7 +113,11 @@
     },
     {
       "file_path": "migrations/V2.9__claimius_denormalize_root_fallback.sql",
-      "sha256": "231ecd8f1dd9541d1c259b5780f9465afa373bb72434289f1b62d38cbfa7cc62"
+      "sha256": "c50bbf274095aff169c18e0d4690774746b2b53c53ab329cb9715599f5292c4f"
+    },
+    {
+      "file_path": "migrations/V3.0__claimius_get_access_owner_root.sql",
+      "sha256": "cb911a516e7a8c2f9ec62c944163950d3da71cced664e8df9d9e5290a607c681"
     },
     {
       "file_path": "migrations/V3.1__search_object_id_filter.sql",
@@ -109,7 +133,7 @@
     },
     {
       "file_path": "migrations/V3.4__session_consolidated.sql",
-      "sha256": "f351d93b7ffa5a0e5d7845b95a3f34750f6d130d183939a389adc18cc83820a2"
+      "sha256": "fd2806440d80eedb166d72a65355a3ce5150583027e720f09893063fbc0dc92c"
     },
     {
       "file_path": "migrations/V3.5__claimius_graph_strip_target_object_type.sql",
@@ -197,7 +221,11 @@
     },
     {
       "file_path": "migrations/V5.5__access_member_bit.sql",
-      "sha256": "73d089720a6a4c4e82acbfc86f9f7070f6a4d16afe67b32c622a39cb418864a9"
+      "sha256": "e2d15877d56f2f55d5751f3cd719f8aa3ed36db6c0ad177ecd551e7cac273ec7"
+    },
+    {
+      "file_path": "migrations/V5.6__drop_get_booking_members.sql",
+      "sha256": "27cb6321a91bcc982f49fbc7e5912c382f6a2990c4d3b0b03495046e9810bd90"
     },
     {
       "file_path": "migrations/V5.7__object_checkin_activity.sql",
@@ -221,7 +249,7 @@
     },
     {
       "file_path": "migrations/V6.11__claimius_create_organization_user.sql",
-      "sha256": "8efd2ab4c6dd98e003c4c2cc28349c1fa25e2525fff63b171d76fb031f17318b"
+      "sha256": "c1bb40a57b4b22c694d5676b34f3b029efd97bbf10e51b342dd108fbdc1e02d6"
     },
     {
       "file_path": "migrations/V6.12__relation_graph_bookable_type_edge.sql",
@@ -237,11 +265,15 @@
     },
     {
       "file_path": "migrations/V6.15__create_organization_user_virtual_claim.sql",
-      "sha256": "8859d46998001c1f155b46c18053d83fb0401211b90bcbc0cb705ff841247c55"
+      "sha256": "443752cd681ddd090533fbee5ca425e4ca37d0a58651d5857f38e47304e10737"
+    },
+    {
+      "file_path": "migrations/V6.1__drop_get_access_scope.sql",
+      "sha256": "1fa62d0b3b66fe47cfc8e969b45cb7dd7d473b37d20bbde6c1c2da9b17acadf2"
     },
     {
       "file_path": "migrations/V6.2__claim_composition.sql",
-      "sha256": "a18087396410dc2307d07ebea1b0833fc8cf71fd45721f20e41eac45df63eb0d"
+      "sha256": "73e33c665e6edf6535ecb166b5962c46b32f925d9060c51f5ad0f318a4ca37b3"
     },
     {
       "file_path": "migrations/V6.3__attach_calc_trigger_statement.sql",
@@ -260,12 +292,16 @@
       "sha256": "a688d759c344aaacc2594e37cdb1b7eca96a3955b1d4b4e1548a9b887c3eced2"
     },
     {
+      "file_path": "migrations/V6.7__inline_event_suppression.sql",
+      "sha256": "380c9ad0798755a7e6f1da0d9338d1a3a39a5f24440225e5283499f34a5adfd0"
+    },
+    {
       "file_path": "migrations/V6.8__claimius_hierarchical_calc_triggers.sql",
       "sha256": "ed82b00bf215e81e32fd49421e4ca8824f035f272aef0084b7178f4dfa231a8c"
     },
     {
       "file_path": "migrations/V6.9__remove_claim_return_row.sql",
-      "sha256": "ef6ab513db9431bafaddb37eb15fed38766c8c43699ccc7430226b2b51a689df"
+      "sha256": "381c058ef4450db03097c3850fca43243fb990bdfc9ffb2e07a9ec6ac0e96e38"
     },
     {
       "file_path": "system/V1.0__init_disciple.sql",

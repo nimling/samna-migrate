@@ -65,7 +65,6 @@ name: smig-test
 steps:
   - name: Migrations
     type: migration
-    slug: migration
     schemas: [public]
     include:
       - path: migrations/

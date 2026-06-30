@@ -233,10 +233,10 @@ func TestSmigRebasePruneFoldsOrphan(t *testing.T) {
 	}
 	_, err := p.Exec(ctx, `
 		INSERT INTO samna_migrate.file
-		    (step_name, step_type, slug, version, file_name, file_path, sha256, applied_sha256,
+		    (step_name, step_type, slug, version, file_name, file_path, sha256, applied_sha256, size_bytes,
 		     state, position, applied_position, applied_at, first_seen, discovered_at, state_changed_at, updated_at)
 		VALUES ('Migrations', 'migration', 'migration', '9999.0', 'V9999.0__prune_e2e_orphan.sql', $1,
-		        'deadbeef', 'deadbeef', 'applied',
+		        'deadbeef', 'deadbeef', 0, 'applied',
 		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
 		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1,
 		        now(), now(), now(), now(), now())`, orphan)

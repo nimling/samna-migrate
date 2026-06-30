@@ -123,7 +123,7 @@ dev *args:
     go run ./cmd {{args}}
 
 deploy level="patch":
-    @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version
+    @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --workflow
 
 help:
     @echo "Available targets:"
