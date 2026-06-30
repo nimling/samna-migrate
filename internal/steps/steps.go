@@ -24,7 +24,9 @@ type IncludeEntry struct {
 	Path     string `yaml:"path"`
 	Fallback string `yaml:"fallback,omitempty"`
 	Git      string `yaml:"git,omitempty"`
+	Branch   string `yaml:"branch,omitempty"`
 	Ref      string `yaml:"ref,omitempty"`
+	Token    string `yaml:"token,omitempty"`
 	URL      string `yaml:"url,omitempty"`
 }
 
@@ -127,7 +129,7 @@ var (
 func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 	switch {
 	case inc.Git != "":
-		dir, err := fetchGit(inc.Git, inc.Ref, inc.Path)
+		dir, err := fetchGit(inc.Git, inc.Branch, inc.Ref, inc.Path, inc.Token)
 		if err != nil {
 			return "", false, err
 		}
@@ -154,14 +156,32 @@ func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 	}
 }
 
-// fetchGit clones only the requested subfolder of a git repo at a ref using a
-// shallow sparse checkout, returning the local path of that subfolder. The git
-// binary handles ssh and https with the caller's existing credentials.
-func fetchGit(repo, ref, sub string) (string, error) {
-	if ref == "" {
-		ref = "main"
+// fetchGit clones only the requested subfolder of a git repo using a shallow
+// sparse checkout and returns the local path of that subfolder. A pinned ref
+// wins; otherwise the branch is used, defaulting to main. All inputs are env
+// expanded. A token, taken from the include or from GITHUB_TOKEN, authenticates
+// https for private repos. The git binary handles ssh with the caller's keys.
+func fetchGit(repo, branch, ref, sub, token string) (string, error) {
+	repo = os.ExpandEnv(repo)
+	branch = strings.TrimSpace(os.ExpandEnv(branch))
+	ref = strings.TrimSpace(os.ExpandEnv(ref))
+	sub = os.ExpandEnv(sub)
+	token = strings.TrimSpace(os.ExpandEnv(token))
+	if token == "" {
+		token = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
 	}
-	key := "git\x00" + repo + "\x00" + ref
+	if branch == "" {
+		branch = "main"
+	}
+	target := ref
+	if target == "" {
+		target = branch
+	}
+	cloneURL := repo
+	if token != "" && strings.HasPrefix(repo, "https://") {
+		cloneURL = "https://x-access-token:" + token + "@" + strings.TrimPrefix(repo, "https://")
+	}
+	key := "git\x00" + repo + "\x00" + target
 	remoteMu.Lock()
 	root, ok := remoteCache[key]
 	remoteMu.Unlock()
@@ -170,9 +190,13 @@ func fetchGit(repo, ref, sub string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		clone := exec.Command("git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", ref, repo, dir)
+		clone := exec.Command("git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", target, cloneURL, dir)
 		if out, err := clone.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("git clone %s@%s: %w: %s", repo, ref, err, strings.TrimSpace(string(out)))
+			msg := strings.TrimSpace(string(out))
+			if token != "" {
+				msg = strings.ReplaceAll(msg, token, "***")
+			}
+			return "", fmt.Errorf("git clone %s@%s: %w: %s", repo, target, err, msg)
 		}
 		root = dir
 		remoteMu.Lock()
@@ -182,12 +206,12 @@ func fetchGit(repo, ref, sub string) (string, error) {
 	if sub != "" {
 		set := exec.Command("git", "-C", root, "sparse-checkout", "set", sub)
 		if out, err := set.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("git sparse-checkout %s in %s@%s: %w: %s", sub, repo, ref, err, strings.TrimSpace(string(out)))
+			return "", fmt.Errorf("git sparse-checkout %s in %s@%s: %w: %s", sub, repo, target, err, strings.TrimSpace(string(out)))
 		}
 	}
 	full := filepath.Join(root, filepath.FromSlash(sub))
 	if _, err := os.Stat(full); err != nil {
-		return "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, ref)
+		return "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, target)
 	}
 	return full, nil
 }
@@ -195,6 +219,8 @@ func fetchGit(repo, ref, sub string) (string, error) {
 // fetchURL downloads a non git archive over http, extracts it once per run, and
 // returns the requested subfolder inside it. Any failure is returned as an error.
 func fetchURL(rawURL, sub string) (string, error) {
+	rawURL = os.ExpandEnv(rawURL)
+	sub = os.ExpandEnv(sub)
 	key := "url\x00" + rawURL
 	remoteMu.Lock()
 	root, ok := remoteCache[key]

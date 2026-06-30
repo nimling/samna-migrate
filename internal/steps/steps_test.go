@@ -46,6 +46,35 @@ func TestResolveFilesGitSubfolder(t *testing.T) {
 	}
 }
 
+func TestResolveFilesGitBranchNoRef(t *testing.T) {
+	repo := t.TempDir()
+	sub := filepath.Join(repo, "prophet", "database")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "V1.0__claimius_roles.sql"), []byte("-- roles"), 0o644)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "trunk"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"},
+	} {
+		if out, err := runGit(repo, args...); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	step := &Step{
+		Name: "Claimius", Type: "base", Slug: "claimius",
+		Include: []IncludeEntry{{Git: repo, Branch: "trunk", Path: "prophet/database"}},
+	}
+	files, err := step.ResolveFiles(t.TempDir())
+	if err != nil {
+		t.Fatalf("ResolveFiles git branch: %v", err)
+	}
+	if len(files) != 1 || files[0].Name != "V1.0__claimius_roles.sql" {
+		t.Fatalf("git branch resolved %#v", files)
+	}
+}
+
 func TestResolveFilesGitMissingRefFails(t *testing.T) {
 	repo := t.TempDir()
 	if out, err := runGit(repo, "init", "-q", "-b", "trunk"); err != nil {
