@@ -39,7 +39,7 @@ For each step:
   - Mark the file row state='reverted' and write a history row with action_type='down'
     and undoing_history_id pointing back at the original apply row.
 
-Requires --anthropic-key or the ANTHROPIC_API_KEY env var. Refuses to run in CI.
+Requires --anthropic-key or the ANTHROPIC_API_KEY env var.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -51,9 +51,6 @@ Requires --anthropic-key or the ANTHROPIC_API_KEY env var. Refuses to run in CI.
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir
-		if cfg.IsCI() {
-			return fmt.Errorf("smig down is local only and refuses to run in CI")
-		}
 		key := cli.AnthropicKey
 		if key == "" {
 			key = os.Getenv("ANTHROPIC_API_KEY")

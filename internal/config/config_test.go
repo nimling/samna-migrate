@@ -80,24 +80,6 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestIsCI(t *testing.T) {
-	t.Setenv("CI", "")
-	t.Setenv("GITHUB_ACTIONS", "")
-	c := &Config{}
-	if c.IsCI() {
-		t.Error("expected not CI without env vars")
-	}
-	t.Setenv("CI", "true")
-	if !c.IsCI() {
-		t.Error("expected CI when CI=true")
-	}
-	t.Setenv("CI", "")
-	t.Setenv("GITHUB_ACTIONS", "true")
-	if !c.IsCI() {
-		t.Error("expected CI when GITHUB_ACTIONS=true")
-	}
-}
-
 func TestConnString(t *testing.T) {
 	c := &Config{
 		PGHost: "h", PGPort: "5432", PGUser: "u", PGPassword: "p",

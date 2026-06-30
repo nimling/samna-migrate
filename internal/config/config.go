@@ -50,10 +50,6 @@ func (c *Config) ConnString() string {
 		c.PGHost, c.PGPort, c.PGUser, c.PGPassword, c.PGDatabase, c.PGSSLMode)
 }
 
-func (c *Config) IsCI() bool {
-	return os.Getenv("CI") != "" || os.Getenv("GITHUB_ACTIONS") != ""
-}
-
 func LoadDotEnv(path string) error {
 	f, err := os.Open(path)
 	if err != nil {

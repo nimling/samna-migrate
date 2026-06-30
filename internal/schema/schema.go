@@ -26,6 +26,12 @@ func Ensure(ctx context.Context, d *db.DB) error {
 	return err
 }
 
+// Initialized reports whether the samna_migrate schema chain has been
+// established, detected by the presence of state.schema_version.
+func Initialized(ctx context.Context, d *db.DB) (bool, error) {
+	return d.ColumnExists(ctx, "samna_migrate", "state", "schema_version")
+}
+
 func GetSchemaVersion(ctx context.Context, d *db.DB) (int, error) {
 	exists, _ := d.ColumnExists(ctx, "samna_migrate", "state", "schema_version")
 	if !exists {

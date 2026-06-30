@@ -10,13 +10,22 @@ import (
 	"github.com/nimling/samna-migrate/internal/require"
 	"github.com/nimling/samna-migrate/internal/schema"
 	"github.com/nimling/samna-migrate/internal/steps"
+	"github.com/nimling/samna-migrate/internal/upgrade"
 	"github.com/nimling/samna-migrate/pkg/cli"
 )
 
-// bootCheck verifies the db is exactly aligned with the script before any non-upgrade command proceeds.
+// bootCheck verifies the db is aligned with the script before a command proceeds.
+// A fresh database is initialized to the latest schema version in place; an
+// existing database left behind by an invalid version stops and asks for upgrade.
 func bootCheck(ctx context.Context, d *db.DB, stepsFile, dbDir, toolVersion string) error {
-	if err := schema.Ensure(ctx, d); err != nil {
+	initialized, err := schema.Initialized(ctx, d)
+	if err != nil {
 		return err
+	}
+	if !initialized {
+		if err := upgrade.Apply(ctx, d, stepsFile, toolVersion, false); err != nil {
+			return err
+		}
 	}
 	current, err := schema.GetSchemaVersion(ctx, d)
 	if err != nil {
@@ -26,14 +35,14 @@ func bootCheck(ctx context.Context, d *db.DB, stepsFile, dbDir, toolVersion stri
 		return fmt.Errorf("database was touched by a newer migrate tool: db schema_version=%d, this tool=%d", current, cli.SchemaVersion)
 	}
 	if current < cli.SchemaVersion {
-		return fmt.Errorf("samna_migrate schema behind. Run 'migrate upgrade' locally: db schema_version=%d, this tool=%d", current, cli.SchemaVersion)
+		return fmt.Errorf("samna_migrate schema behind. Run 'migrate upgrade': db schema_version=%d, this tool=%d", current, cli.SchemaVersion)
 	}
 	dbTool, err := schema.GetToolVersion(ctx, d)
 	if err != nil {
 		return err
 	}
 	if dbTool == "" || dbTool != toolVersion {
-		return fmt.Errorf("tool_version mismatch. Run 'migrate upgrade' locally: db=%q, this tool=%q", dbTool, toolVersion)
+		return fmt.Errorf("tool_version mismatch. Run 'migrate upgrade': db=%q, this tool=%q", dbTool, toolVersion)
 	}
 	if _, err := os.Stat(stepsFile); err != nil {
 		return fmt.Errorf("migrate.yml not found at %s", stepsFile)
@@ -47,10 +56,10 @@ func bootCheck(ctx context.Context, d *db.DB, stepsFile, dbDir, toolVersion stri
 		return err
 	}
 	if dbSha == "" {
-		return fmt.Errorf("migrate.yml has not been acknowledged. Run 'migrate upgrade' locally")
+		return fmt.Errorf("migrate.yml has not been acknowledged. Run 'migrate upgrade'")
 	}
 	if dbSha != diskSha {
-		return fmt.Errorf("migrate.yml drift. Run 'migrate upgrade' locally: db=%s disk=%s", dbSha[:12], diskSha[:12])
+		return fmt.Errorf("migrate.yml drift. Run 'migrate upgrade': db=%s disk=%s", dbSha[:12], diskSha[:12])
 	}
 	stepsCfg, err := steps.Load(stepsFile)
 	if err != nil {

@@ -4,6 +4,8 @@ package integration
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/nimling/samna-migrate/internal/schema"
@@ -11,6 +13,63 @@ import (
 	"github.com/nimling/samna-migrate/internal/upgrade"
 	"github.com/nimling/samna-migrate/pkg/cli"
 )
+
+func writeStepsFile(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "migrate.yml")
+	if err := os.WriteFile(path, []byte("name: test\nversion: \"1.0\"\nsteps: []\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestApplyInitializesFresh(t *testing.T) {
+	d := testdb.Open(t)
+	ctx := context.Background()
+	if err := upgrade.Apply(ctx, d, writeStepsFile(t), "smig-test", false); err != nil {
+		t.Fatal(err)
+	}
+	v, err := schema.GetSchemaVersion(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != upgrade.TargetVersion {
+		t.Errorf("schema_version = %d, want %d", v, upgrade.TargetVersion)
+	}
+	tv, err := schema.GetToolVersion(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tv != "smig-test" {
+		t.Errorf("tool_version = %q, want smig-test", tv)
+	}
+	sha, err := schema.GetYAMLSha(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha == "" {
+		t.Error("expected migrate.yml acknowledged after Apply")
+	}
+}
+
+func TestApplyIdempotent(t *testing.T) {
+	d := testdb.Open(t)
+	ctx := context.Background()
+	steps := writeStepsFile(t)
+	if err := upgrade.Apply(ctx, d, steps, "smig-test", false); err != nil {
+		t.Fatal(err)
+	}
+	if err := upgrade.Apply(ctx, d, steps, "smig-test", false); err != nil {
+		t.Fatalf("second Apply failed: %v", err)
+	}
+	v, err := schema.GetSchemaVersion(ctx, d)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v != upgrade.TargetVersion {
+		t.Errorf("schema_version = %d, want %d", v, upgrade.TargetVersion)
+	}
+}
 
 func TestUpgradeChainEndToEnd(t *testing.T) {
 	d := testdb.Open(t)

@@ -32,6 +32,7 @@ type IncludeEntry struct {
 	Branch   string `yaml:"branch,omitempty"`
 	Ref      string `yaml:"ref,omitempty"`
 	Token    string `yaml:"token,omitempty"`
+	Key      string `yaml:"key,omitempty"`
 	URL      string `yaml:"url,omitempty"`
 }
 
@@ -134,7 +135,7 @@ var (
 func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 	switch {
 	case inc.Git != "":
-		dir, err := fetchGit(inc.Git, inc.Branch, inc.Ref, inc.Path, inc.Token)
+		dir, err := fetchGit(inc.Git, inc.Branch, inc.Ref, inc.Path, inc.Token, inc.Key)
 		if err != nil {
 			return "", false, err
 		}
@@ -165,8 +166,9 @@ func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 // required, and returns the local path of the requested subfolder. A pinned ref
 // wins; otherwise the branch is used, defaulting to main. All inputs are env
 // expanded. A token, taken from the include or from GITHUB_TOKEN, authenticates
-// https for private repos; ssh urls use the caller's ssh agent.
-func fetchGit(repo, branch, ref, sub, token string) (string, error) {
+// https for private repos; an ssh key, taken from the include or from
+// SMIG_SSH_KEY, authenticates ssh urls.
+func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, error) {
 	repo = os.ExpandEnv(repo)
 	branch = strings.TrimSpace(os.ExpandEnv(branch))
 	ref = strings.TrimSpace(os.ExpandEnv(ref))
@@ -187,7 +189,7 @@ func fetchGit(repo, branch, ref, sub, token string) (string, error) {
 	root, ok := remoteCache[key]
 	remoteMu.Unlock()
 	if !ok {
-		dir, err := cloneRepo(repo, branch, ref, token)
+		dir, err := cloneRepo(repo, branch, ref, token, sshKey)
 		if err != nil {
 			return "", err
 		}
@@ -205,8 +207,8 @@ func fetchGit(repo, branch, ref, sub, token string) (string, error) {
 
 // cloneRepo shallow clones repo into a fresh temp dir using go-git. A ref is
 // tried as a tag then a branch, so both a version tag and a branch name resolve.
-func cloneRepo(repo, branch, ref, token string) (string, error) {
-	auth, err := gitAuth(repo, token)
+func cloneRepo(repo, branch, ref, token, sshKey string) (string, error) {
+	auth, err := gitAuth(repo, token, sshKey)
 	if err != nil {
 		return "", err
 	}
@@ -251,7 +253,7 @@ func cloneRepo(repo, branch, ref, token string) (string, error) {
 // auth password when present; ssh urls use a default key file and fall back to
 // the ssh agent, matching how the git binary resolves credentials; a local path
 // needs no auth.
-func gitAuth(repo, token string) (transport.AuthMethod, error) {
+func gitAuth(repo, token, sshKey string) (transport.AuthMethod, error) {
 	switch {
 	case strings.HasPrefix(repo, "https://"), strings.HasPrefix(repo, "http://"):
 		if token != "" {
@@ -259,15 +261,36 @@ func gitAuth(repo, token string) (transport.AuthMethod, error) {
 		}
 		return nil, nil
 	case strings.HasPrefix(repo, "git@"), strings.HasPrefix(repo, "ssh://"):
-		return sshAuth(repo)
+		return sshAuth(repo, sshKey)
 	default:
 		return nil, nil
 	}
 }
 
-// sshAuth prefers a passphrase free default key file under ~/.ssh and falls back
-// to the ssh agent, so a clone authenticates the same way the git binary would.
-func sshAuth(repo string) (transport.AuthMethod, error) {
+// sshAuth authenticates an ssh clone. An explicit key, from the include or
+// SMIG_SSH_KEY, is used as a key file path or as inline PEM material, with an
+// optional passphrase from SMIG_SSH_KEY_PASSWORD. With no explicit key it prefers
+// a passphrase free default key file under ~/.ssh and falls back to the ssh agent.
+func sshAuth(repo, sshKey string) (transport.AuthMethod, error) {
+	sshKey = strings.TrimSpace(os.ExpandEnv(sshKey))
+	if sshKey == "" {
+		sshKey = strings.TrimSpace(os.Getenv("SMIG_SSH_KEY"))
+	}
+	pass := os.Getenv("SMIG_SSH_KEY_PASSWORD")
+	if sshKey != "" {
+		if strings.Contains(sshKey, "PRIVATE KEY") {
+			pk, err := gitssh.NewPublicKeys("git", []byte(sshKey), pass)
+			if err != nil {
+				return nil, fmt.Errorf("ssh key material: %w", err)
+			}
+			return pk, nil
+		}
+		pk, err := gitssh.NewPublicKeysFromFile("git", sshKey, pass)
+		if err != nil {
+			return nil, fmt.Errorf("ssh key %s: %w", sshKey, err)
+		}
+		return pk, nil
+	}
 	if home, err := os.UserHomeDir(); err == nil {
 		for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
 			p := filepath.Join(home, ".ssh", name)
