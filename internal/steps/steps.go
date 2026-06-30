@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -211,28 +212,14 @@ func relOrName(dbDir, abs string) string {
 	return rel
 }
 
+var rxFilename = regexp.MustCompile(`^V([1-9][0-9]*(?:\.[0-9]+)*)__([a-z0-9]+)_([a-z0-9_]+)\.sql$`)
+
 func ParseFilename(name string) (version, slug, label string, ok bool) {
-	if !strings.HasSuffix(name, ".sql") {
+	m := rxFilename.FindStringSubmatch(name)
+	if m == nil {
 		return "", "", "", false
 	}
-	base := strings.TrimSuffix(name, ".sql")
-	if !strings.HasPrefix(base, "V") {
-		return "", "", "", false
-	}
-	idx := strings.Index(base, "__")
-	if idx < 0 {
-		return "", "", "", false
-	}
-	version = strings.TrimPrefix(base[:idx], "V")
-	tail := base[idx+2:]
-	under := strings.Index(tail, "_")
-	if under < 0 {
-		slug = tail
-		return version, slug, "", true
-	}
-	slug = tail[:under]
-	label = tail[under+1:]
-	return version, slug, label, true
+	return m[1], m[2], m[3], true
 }
 
 // Active evaluates the step's if expression with sh. An empty expression

@@ -16,7 +16,6 @@ func TestParseFilenameExtras(t *testing.T) {
 		{"V100.5.3__migration_long.sql", "100.5.3", "migration", "long", true},
 		{"V1.0__claimius2_x.sql", "1.0", "claimius2", "x", true},
 		{"V1.0__system_init_disciple.sql", "1.0", "system", "init_disciple", true},
-		{"V0.0__roles.sql", "0.0", "roles", "", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.input, func(t *testing.T) {

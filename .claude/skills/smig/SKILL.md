@@ -65,6 +65,8 @@ Read only preflight. Runs `boot_check` then scans disk against the ledger and re
 
 Static checks on every step file, no database needed. Reports filename grammar violations, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero. `--strict` promotes warnings to errors. With `samna_migrate.lock.json` present it also rejects any locked file that was edited or deleted. Run it before proposing any SQL change and in PR CI.
 
+The filename grammar is `V<version>__<slug>_<name>.sql`: a `V` prefix, a dot separated integer version whose leading component is at least 1, the `__` separator, a lowercase alphanumeric slug, an underscore, and a `<name>` of lowercase alphanumerics and underscores. Both the slug and the name are required and the version never starts at 0, so `V1.0__claimius_roles.sql` is valid while `V1.0__roles.sql` and `V0.0__claimius_roles.sql` are both rejected. `ParseFilename` in `internal/steps/steps.go` and `FILENAME_GRAMMAR` in `database/shell/scripts/migrate.sh` enforce the identical grammar. A `migration` step fails on a violation, a `base` step emits a notice, and a `seed` step is not grammar checked.
+
 ### smig upgrade
 
 Local operator only. Walks the `samna_migrate` schema chain to the tool `SchemaVersion`, then writes `yaml_sha256` and `tool_version` into `samna_migrate.state`. This is the acknowledgement step that lets a later `up` pass `boot_check`. Run it after pulling a new `smig` version or editing `migrate.yml`. Prompts for the database name.

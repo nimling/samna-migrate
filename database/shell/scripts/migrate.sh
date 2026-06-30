@@ -65,7 +65,7 @@ STEP_INCLUDES=()
 STEP_EXCLUDES=()
 STEP_VARS=()
 
-FILENAME_GRAMMAR='^V[0-9]+(\.[0-9]+)*__[a-z0-9]+_[a-z0-9_]+\.sql$'
+FILENAME_GRAMMAR='^V[1-9][0-9]*(\.[0-9]+)*__[a-z0-9]+_[a-z0-9_]+\.sql$'
 
 function hr() {
     local char="${1:-─}"
@@ -992,7 +992,7 @@ function collect_all_files() {
 
 function parse_filename() {
     local file_name="$1"
-    if [[ "$file_name" =~ ^V([0-9]+(\.[0-9]+)*)__([a-z0-9]+)_([a-z0-9_]+)\.sql$ ]]; then
+    if [[ "$file_name" =~ ^V([1-9][0-9]*(\.[0-9]+)*)__([a-z0-9]+)_([a-z0-9_]+)\.sql$ ]]; then
         echo "${BASH_REMATCH[1]}|${BASH_REMATCH[3]}|${BASH_REMATCH[4]}"
         return 0
     fi

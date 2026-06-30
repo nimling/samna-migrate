@@ -54,7 +54,7 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 		}
 		for _, f := range files {
 			if _, _, _, ok := steps.ParseFilename(f.Name); !ok {
-				r.add(f.Rel, "error", "filename grammar must be V<version>__<slug>[_<label>].sql")
+				r.add(f.Rel, "error", "filename grammar must be V<version>__<slug>_<name>.sql with version >= 1")
 			}
 			b, err := os.ReadFile(f.AbsPath)
 			if err != nil {

@@ -53,10 +53,10 @@ func TestLintCommentOnFunctionWithoutSignature(t *testing.T) {
 
 func TestLintIdempotencyWarnings(t *testing.T) {
 	dbDir := t.TempDir()
-	writeStep(t, dbDir, "migrations", "V1.0__index.sql", "CREATE INDEX foo_idx ON public.a(id);")
-	writeStep(t, dbDir, "migrations", "V1.1__column.sql", "ALTER TABLE public.a ADD COLUMN n INT;")
-	writeStep(t, dbDir, "migrations", "V1.2__function.sql", "CREATE FUNCTION public.h() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;")
-	writeStep(t, dbDir, "base", "V1.0__guarded.sql", "CREATE INDEX bar_idx ON public.b(id);")
+	writeStep(t, dbDir, "migrations", "V1.0__migration_index.sql", "CREATE INDEX foo_idx ON public.a(id);")
+	writeStep(t, dbDir, "migrations", "V1.1__migration_column.sql", "ALTER TABLE public.a ADD COLUMN n INT;")
+	writeStep(t, dbDir, "migrations", "V1.2__migration_function.sql", "CREATE FUNCTION public.h() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;")
+	writeStep(t, dbDir, "base", "V1.0__base_guarded.sql", "CREATE INDEX bar_idx ON public.b(id);")
 	r, err := Run(twoStepConfig(), dbDir, "")
 	if err != nil {
 		t.Fatal(err)
@@ -64,14 +64,14 @@ func TestLintIdempotencyWarnings(t *testing.T) {
 	if r.Warnings != 3 {
 		t.Errorf("warnings = %d, want 3: %+v", r.Warnings, r.Findings)
 	}
-	if len(findingFor(r, "base/V1.0__guarded.sql")) != 0 {
+	if len(findingFor(r, "base/V1.0__base_guarded.sql")) != 0 {
 		t.Errorf("index idempotency check must not apply to base steps")
 	}
 }
 
 func TestLintSessionReplicationRoleAndGrammar(t *testing.T) {
 	dbDir := t.TempDir()
-	writeStep(t, dbDir, "base", "V1.0__roles.sql", "SET session_replication_role = replica;")
+	writeStep(t, dbDir, "base", "V1.0__base_roles.sql", "SET session_replication_role = replica;")
 	writeStep(t, dbDir, "base", "badname.sql", "SELECT 1;")
 	r, err := Run(twoStepConfig(), dbDir, "")
 	if err != nil {
