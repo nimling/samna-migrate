@@ -54,10 +54,10 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 			return nil, err
 		}
 		for _, f := range files {
-			if _, slug, _, ok := steps.ParseFilename(f.Name); !ok {
+			if _, slug, label, ok := steps.ParseFilename(f.Name); !ok {
 				r.add(f.Rel, "error", "filename grammar must be V<version>__<slug>_<name>.sql with version >= 1")
-			} else if !validSlugs[slug] {
-				r.add(f.Rel, "error", fmt.Sprintf("filename slug %q is not a slug declared by any step in migrate.yml", slug))
+			} else if !slugDeclared(validSlugs, slug+"_"+label) {
+				r.add(f.Rel, "error", fmt.Sprintf("filename slug in %q is not a slug declared by any step in migrate.yml", f.Name))
 			}
 			b, err := os.ReadFile(f.AbsPath)
 			if err != nil {
@@ -90,6 +90,19 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 	}
 
 	return r, nil
+}
+
+// slugDeclared reports whether the slug segment of a filename names a declared
+// area. The segment is the text after the version, so a declared slug matches
+// when it equals that text or is a leading component of it before an
+// underscore. This lets a multi word slug like debug_user own debug_user_seed.
+func slugDeclared(valid map[string]bool, rest string) bool {
+	for s := range valid {
+		if rest == s || strings.HasPrefix(rest, s+"_") {
+			return true
+		}
+	}
+	return false
 }
 
 func checkContent(r *Result, rel, stepType, content string) {

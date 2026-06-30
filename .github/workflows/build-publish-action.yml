@@ -121,3 +121,7 @@ jobs:
             https://github.com/${{ github.repository }}/commits/${{ needs.version.outputs.version }}
           draft: false
           prerelease: false
+      - name: Update latest tag
+        run: |
+          git tag -f latest
+          git push -f origin latest

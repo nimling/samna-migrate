@@ -98,3 +98,22 @@ func TestLintCreateTypeGuard(t *testing.T) {
 		t.Errorf("guarded CREATE TYPE must pass: %+v", r.Findings)
 	}
 }
+
+func TestLintMultiWordSlug(t *testing.T) {
+	dbDir := t.TempDir()
+	writeStep(t, dbDir, "debug_user", "V1.0__debug_user_seed.sql", "SELECT 1;")
+	writeStep(t, dbDir, "debug_user", "V1.1__other_seed.sql", "SELECT 1;")
+	cfg := &steps.Config{Steps: []steps.Step{
+		{Name: "DebugUser", Type: "seed", Slug: "debug_user", Include: []steps.IncludeEntry{{Path: "debug_user/"}}},
+	}}
+	r, err := Run(cfg, dbDir, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(findingFor(r, "debug_user/V1.0__debug_user_seed.sql")) != 0 {
+		t.Errorf("debug_user_seed must match the debug_user slug: %+v", r.Findings)
+	}
+	if len(findingFor(r, "debug_user/V1.1__other_seed.sql")) == 0 {
+		t.Errorf("other_seed must be flagged as an undeclared slug: %+v", r.Findings)
+	}
+}
