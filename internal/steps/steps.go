@@ -1,7 +1,13 @@
 package steps
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"bytes"
+	"compress/gzip"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,6 +15,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,6 +23,9 @@ import (
 type IncludeEntry struct {
 	Path     string `yaml:"path"`
 	Fallback string `yaml:"fallback,omitempty"`
+	Git      string `yaml:"git,omitempty"`
+	Ref      string `yaml:"ref,omitempty"`
+	URL      string `yaml:"url,omitempty"`
 }
 
 func (e *IncludeEntry) UnmarshalYAML(node *yaml.Node) error {
@@ -90,11 +100,11 @@ func (c *Config) Slugs() map[string]bool {
 }
 
 type File struct {
-	Step     Step
-	AbsPath  string
-	Rel      string
-	Name     string
-	Folder   string
+	Step    Step
+	AbsPath string
+	Rel     string
+	Name    string
+	Folder  string
 }
 
 func resolveIncludePath(dbDir, p string) string {
@@ -105,6 +115,187 @@ func resolveIncludePath(dbDir, p string) string {
 	return filepath.Clean(filepath.Join(dbDir, p))
 }
 
+var (
+	remoteMu    sync.Mutex
+	remoteCache = map[string]string{}
+)
+
+// source materializes the include into a local directory or file path. A local
+// path resolves through path then fallback and reports found=false when neither
+// exists. A git or url source is fetched once per run and any failure is
+// returned as an error rather than skipped.
+func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
+	switch {
+	case inc.Git != "":
+		dir, err := fetchGit(inc.Git, inc.Ref, inc.Path)
+		if err != nil {
+			return "", false, err
+		}
+		return dir, true, nil
+	case inc.URL != "":
+		dir, err := fetchURL(inc.URL, inc.Path)
+		if err != nil {
+			return "", false, err
+		}
+		return dir, true, nil
+	default:
+		base := resolveIncludePath(dbDir, inc.Path)
+		if _, err := os.Stat(base); err == nil {
+			return base, true, nil
+		}
+		if inc.Fallback == "" {
+			return "", false, nil
+		}
+		base = resolveIncludePath(dbDir, inc.Fallback)
+		if _, err := os.Stat(base); err == nil {
+			return base, true, nil
+		}
+		return "", false, nil
+	}
+}
+
+// fetchGit clones only the requested subfolder of a git repo at a ref using a
+// shallow sparse checkout, returning the local path of that subfolder. The git
+// binary handles ssh and https with the caller's existing credentials.
+func fetchGit(repo, ref, sub string) (string, error) {
+	if ref == "" {
+		ref = "main"
+	}
+	key := "git\x00" + repo + "\x00" + ref
+	remoteMu.Lock()
+	root, ok := remoteCache[key]
+	remoteMu.Unlock()
+	if !ok {
+		dir, err := os.MkdirTemp("", "smig-git-")
+		if err != nil {
+			return "", err
+		}
+		clone := exec.Command("git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", ref, repo, dir)
+		if out, err := clone.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git clone %s@%s: %w: %s", repo, ref, err, strings.TrimSpace(string(out)))
+		}
+		root = dir
+		remoteMu.Lock()
+		remoteCache[key] = root
+		remoteMu.Unlock()
+	}
+	if sub != "" {
+		set := exec.Command("git", "-C", root, "sparse-checkout", "set", sub)
+		if out, err := set.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("git sparse-checkout %s in %s@%s: %w: %s", sub, repo, ref, err, strings.TrimSpace(string(out)))
+		}
+	}
+	full := filepath.Join(root, filepath.FromSlash(sub))
+	if _, err := os.Stat(full); err != nil {
+		return "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, ref)
+	}
+	return full, nil
+}
+
+// fetchURL downloads a non git archive over http, extracts it once per run, and
+// returns the requested subfolder inside it. Any failure is returned as an error.
+func fetchURL(rawURL, sub string) (string, error) {
+	key := "url\x00" + rawURL
+	remoteMu.Lock()
+	root, ok := remoteCache[key]
+	remoteMu.Unlock()
+	if !ok {
+		resp, err := http.Get(rawURL)
+		if err != nil {
+			return "", fmt.Errorf("download %s: %w", rawURL, err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("download %s: %s", rawURL, resp.Status)
+		}
+		dir, err := os.MkdirTemp("", "smig-url-")
+		if err != nil {
+			return "", err
+		}
+		if err := extractArchive(rawURL, resp.Body, dir); err != nil {
+			return "", fmt.Errorf("extract %s: %w", rawURL, err)
+		}
+		root = dir
+		remoteMu.Lock()
+		remoteCache[key] = root
+		remoteMu.Unlock()
+	}
+	full := filepath.Join(root, filepath.FromSlash(sub))
+	if _, err := os.Stat(full); err != nil {
+		return "", fmt.Errorf("subfolder %q not found in %s", sub, rawURL)
+	}
+	return full, nil
+}
+
+func extractArchive(name string, r io.Reader, dst string) error {
+	switch {
+	case strings.HasSuffix(name, ".zip"):
+		data, err := io.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return err
+		}
+		for _, f := range zr.File {
+			if err := writeUnder(dst, f.Name, f.FileInfo().IsDir(), f.Open); err != nil {
+				return err
+			}
+		}
+		return nil
+	case strings.HasSuffix(name, ".tar.gz"), strings.HasSuffix(name, ".tgz"):
+		gz, err := gzip.NewReader(r)
+		if err != nil {
+			return err
+		}
+		defer gz.Close()
+		tr := tar.NewReader(gz)
+		for {
+			hd, err := tr.Next()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				return err
+			}
+			open := func() (io.ReadCloser, error) { return io.NopCloser(tr), nil }
+			if err := writeUnder(dst, hd.Name, hd.Typeflag == tar.TypeDir, open); err != nil {
+				return err
+			}
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported archive %q, want .zip, .tar.gz, or .tgz", name)
+	}
+}
+
+func writeUnder(dst, name string, isDir bool, open func() (io.ReadCloser, error)) error {
+	target := filepath.Join(dst, filepath.FromSlash(name))
+	clean := filepath.Clean(dst)
+	if target != clean && !strings.HasPrefix(target, clean+string(os.PathSeparator)) {
+		return fmt.Errorf("archive entry escapes destination: %q", name)
+	}
+	if isDir {
+		return os.MkdirAll(target, 0o755)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	rc, err := open()
+	if err != nil {
+		return err
+	}
+	defer rc.Close()
+	out, err := os.Create(target)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+	_, err = io.Copy(out, rc)
+	return err
+}
+
 func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 	files := []File{}
 	seen := map[string]bool{}
@@ -113,17 +304,16 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 		excludes[filepath.Base(e.Path)] = true
 	}
 	for _, inc := range s.Include {
-		base := resolveIncludePath(dbDir, inc.Path)
+		base, found, err := inc.source(dbDir)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			continue
+		}
 		info, err := os.Stat(base)
 		if err != nil {
-			if inc.Fallback == "" {
-				continue
-			}
-			base = resolveIncludePath(dbDir, inc.Fallback)
-			info, err = os.Stat(base)
-			if err != nil {
-				continue
-			}
+			return nil, fmt.Errorf("stat %s: %w", base, err)
 		}
 		if info.IsDir() {
 			entries, err := os.ReadDir(base)

@@ -69,6 +69,15 @@ Each step in `migrate.yml` declares a `type`, required and one of `base` for bas
 
 The filename grammar is `V<version>__<slug>_<name>.sql`: a `V` prefix, a dot separated integer version whose leading component is at least 1, the `__` separator, a lowercase alphanumeric slug, an underscore, and a `<name>` of lowercase alphanumerics and underscores. The slug and the name are both required and the version never starts at 0. The `<slug>` must be one of the slugs declared by the steps in `migrate.yml`; `lint` flags any file whose slug names no declared area. So with steps declaring the slugs `claimius` and `base`, `V1.0__claimius_roles.sql` is valid, while `V1.0__roles.sql`, `V0.0__claimius_roles.sql`, and `V1.0__widget_roles.sql` are all rejected. `ParseFilename` and `Config.Slugs` in `internal/steps/steps.go`, and `FILENAME_GRAMMAR` in `database/shell/scripts/migrate.sh`, carry the grammar.
 
+An include entry resolves from a local folder, a git repo, or a url. The local form is `path` with an optional `fallback`. The git form is `git` for the repo, `ref` for the branch, tag, or commit, and `path` for the subfolder inside that repo; smig shallow sparse checks out only that subfolder through the `git` binary, so ssh and https reuse the caller's existing credentials. The url form is `url` to an archive with `path` as the subfolder inside it. A local include that is missing is skipped; a git or url include that fails to resolve is a hard error. Resolution is in `internal/steps/steps.go`. Example pulling a prophet claimius set straight from the middleware:
+
+```yaml
+include:
+  - git: git@github.com:nimling/samna-auth-middleware.git
+    ref: v1.1.0-alpha0007
+    path: prophet/database
+```
+
 ### smig upgrade
 
 Local operator only. Walks the `samna_migrate` schema chain to the tool `SchemaVersion`, then writes `yaml_sha256` and `tool_version` into `samna_migrate.state`. This is the acknowledgement step that lets a later `up` pass `boot_check`. Run it after pulling a new `smig` version or editing `migrate.yml`. Prompts for the database name.

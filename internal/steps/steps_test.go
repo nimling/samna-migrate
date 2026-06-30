@@ -2,9 +2,69 @@ package steps
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
+
+func TestResolveFilesGitSubfolder(t *testing.T) {
+	repo := t.TempDir()
+	sub := filepath.Join(repo, "prophet", "database")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "V1.0__claimius_roles.sql"), []byte("-- roles"), 0o644)
+	os.WriteFile(filepath.Join(sub, "V1.1__claimius_baseline.sql"), []byte("-- baseline"), 0o644)
+	os.MkdirAll(filepath.Join(repo, "disciple", "database"), 0o755)
+	os.WriteFile(filepath.Join(repo, "disciple", "database", "V1.0__claimius_roles.sql"), []byte("-- disciple"), 0o644)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "trunk"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"},
+		{"tag", "v1.0.0"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	step := &Step{
+		Name: "Claimius", Type: "base", Slug: "claimius",
+		Include: []IncludeEntry{{Git: repo, Ref: "v1.0.0", Path: "prophet/database"}},
+	}
+	files, err := step.ResolveFiles(t.TempDir())
+	if err != nil {
+		t.Fatalf("ResolveFiles git: %v", err)
+	}
+	got := map[string]bool{}
+	for _, f := range files {
+		got[f.Name] = true
+	}
+	if len(files) != 2 || !got["V1.0__claimius_roles.sql"] || !got["V1.1__claimius_baseline.sql"] {
+		t.Fatalf("git subfolder resolved %#v", files)
+	}
+}
+
+func TestResolveFilesGitMissingRefFails(t *testing.T) {
+	repo := t.TempDir()
+	if out, err := runGit(repo, "init", "-q", "-b", "trunk"); err != nil {
+		t.Fatalf("init: %v: %s", err, out)
+	}
+	step := &Step{
+		Name: "Claimius", Type: "base", Slug: "claimius",
+		Include: []IncludeEntry{{Git: repo, Ref: "v9.9.9", Path: "prophet/database"}},
+	}
+	if _, err := step.ResolveFiles(t.TempDir()); err == nil {
+		t.Fatal("ResolveFiles must error on an unreachable git ref")
+	}
+}
+
+func runGit(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd.CombinedOutput()
+}
 
 func TestParseFilename(t *testing.T) {
 	cases := []struct {
