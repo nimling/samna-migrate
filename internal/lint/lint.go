@@ -46,6 +46,7 @@ var (
 func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 	r := &Result{}
 
+	validSlugs := stepsCfg.Slugs()
 	onDisk := map[string]string{}
 	for _, st := range stepsCfg.Steps {
 		files, err := st.ResolveFiles(dbDir)
@@ -53,8 +54,10 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 			return nil, err
 		}
 		for _, f := range files {
-			if _, _, _, ok := steps.ParseFilename(f.Name); !ok {
+			if _, slug, _, ok := steps.ParseFilename(f.Name); !ok {
 				r.add(f.Rel, "error", "filename grammar must be V<version>__<slug>_<name>.sql with version >= 1")
+			} else if !validSlugs[slug] {
+				r.add(f.Rel, "error", fmt.Sprintf("filename slug %q is not a slug declared by any step in migrate.yml", slug))
 			}
 			b, err := os.ReadFile(f.AbsPath)
 			if err != nil {

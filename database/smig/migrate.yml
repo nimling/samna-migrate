@@ -31,7 +31,6 @@ steps:
 
   - name: Migrations
     type: migration
-    slug: migration
     schemas: [public, claimius]
     include:
       - path: migrations/

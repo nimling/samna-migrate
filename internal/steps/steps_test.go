@@ -43,13 +43,13 @@ func TestLoadAndDefaults(t *testing.T) {
 name: test
 steps:
   - name: Claimius
+    type: base
     slug: claimius
     schemas: [claimius]
     include:
       - path: claimius/
   - name: Migrations
     type: migration
-    slug: migration
     include:
       - path: migrations/
 `
@@ -64,7 +64,7 @@ steps:
 		t.Fatalf("steps = %d, want 2", len(cfg.Steps))
 	}
 	if cfg.Steps[0].Type != "base" {
-		t.Errorf("Steps[0].Type default = %q, want base", cfg.Steps[0].Type)
+		t.Errorf("Steps[0].Type = %q, want base", cfg.Steps[0].Type)
 	}
 	if cfg.Steps[1].Type != "migration" {
 		t.Errorf("Steps[1].Type = %q, want migration", cfg.Steps[1].Type)
@@ -74,6 +74,34 @@ steps:
 	}
 	if len(cfg.Steps[1].Schemas) != 1 || cfg.Steps[1].Schemas[0] != "public" {
 		t.Errorf("Steps[1].Schemas default = %v, want [public]", cfg.Steps[1].Schemas)
+	}
+	if !cfg.Slugs()["claimius"] || cfg.Slugs()["migration"] {
+		t.Errorf("Slugs() = %v, want only claimius", cfg.Slugs())
+	}
+}
+
+func TestLoadRejectsInvalidSteps(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+	}{
+		{"missing type", "name: t\nsteps:\n  - name: A\n    slug: base\n    include:\n      - path: a/\n"},
+		{"invalid type", "name: t\nsteps:\n  - name: A\n    type: ddl\n    slug: base\n    include:\n      - path: a/\n"},
+		{"migration with slug", "name: t\nsteps:\n  - name: A\n    type: migration\n    slug: migration\n    include:\n      - path: a/\n"},
+		{"base without slug", "name: t\nsteps:\n  - name: A\n    type: base\n    include:\n      - path: a/\n"},
+		{"seed without slug", "name: t\nsteps:\n  - name: A\n    type: seed\n    include:\n      - path: a/\n"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			p := filepath.Join(dir, "migrate.yml")
+			if err := os.WriteFile(p, []byte(tc.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(p); err == nil {
+				t.Errorf("Load accepted invalid config %q", tc.name)
+			}
+		})
 	}
 }
 

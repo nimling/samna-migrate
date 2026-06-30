@@ -47,6 +47,8 @@ type Config struct {
 	Steps       []Step `yaml:"steps"`
 }
 
+var validTypes = map[string]bool{"base": true, "migration": true, "seed": true}
+
 func Load(path string) (*Config, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -57,14 +59,34 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 	for i := range c.Steps {
-		if c.Steps[i].Type == "" {
-			c.Steps[i].Type = "base"
+		st := &c.Steps[i]
+		if st.Type == "" {
+			return nil, fmt.Errorf("step %q: type is required, want base, migration, or seed", st.Name)
 		}
-		if len(c.Steps[i].Schemas) == 0 {
-			c.Steps[i].Schemas = []string{"public"}
+		if !validTypes[st.Type] {
+			return nil, fmt.Errorf("step %q: type %q is invalid, want base, migration, or seed", st.Name, st.Type)
+		}
+		if st.Type == "migration" && st.Slug != "" {
+			return nil, fmt.Errorf("step %q: a migration step must not declare a slug, its files target slugs declared by other steps", st.Name)
+		}
+		if st.Type != "migration" && st.Slug == "" {
+			return nil, fmt.Errorf("step %q: a %s step must declare a slug", st.Name, st.Type)
+		}
+		if len(st.Schemas) == 0 {
+			st.Schemas = []string{"public"}
 		}
 	}
 	return &c, nil
+}
+
+func (c *Config) Slugs() map[string]bool {
+	out := map[string]bool{}
+	for _, st := range c.Steps {
+		if st.Slug != "" {
+			out[st.Slug] = true
+		}
+	}
+	return out
 }
 
 type File struct {
