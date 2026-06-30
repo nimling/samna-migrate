@@ -17,6 +17,11 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	"gopkg.in/yaml.v3"
 )
 
@@ -156,11 +161,11 @@ func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 	}
 }
 
-// fetchGit clones only the requested subfolder of a git repo using a shallow
-// sparse checkout and returns the local path of that subfolder. A pinned ref
+// fetchGit clones a git repo in process with go-git, so no git binary is
+// required, and returns the local path of the requested subfolder. A pinned ref
 // wins; otherwise the branch is used, defaulting to main. All inputs are env
 // expanded. A token, taken from the include or from GITHUB_TOKEN, authenticates
-// https for private repos. The git binary handles ssh with the caller's keys.
+// https for private repos; ssh urls use the caller's ssh agent.
 func fetchGit(repo, branch, ref, sub, token string) (string, error) {
 	repo = os.ExpandEnv(repo)
 	branch = strings.TrimSpace(os.ExpandEnv(branch))
@@ -177,43 +182,108 @@ func fetchGit(repo, branch, ref, sub, token string) (string, error) {
 	if target == "" {
 		target = branch
 	}
-	cloneURL := repo
-	if token != "" && strings.HasPrefix(repo, "https://") {
-		cloneURL = "https://x-access-token:" + token + "@" + strings.TrimPrefix(repo, "https://")
-	}
 	key := "git\x00" + repo + "\x00" + target
 	remoteMu.Lock()
 	root, ok := remoteCache[key]
 	remoteMu.Unlock()
 	if !ok {
-		dir, err := os.MkdirTemp("", "smig-git-")
+		dir, err := cloneRepo(repo, branch, ref, token)
 		if err != nil {
 			return "", err
-		}
-		clone := exec.Command("git", "clone", "--depth", "1", "--filter=blob:none", "--sparse", "--branch", target, cloneURL, dir)
-		if out, err := clone.CombinedOutput(); err != nil {
-			msg := strings.TrimSpace(string(out))
-			if token != "" {
-				msg = strings.ReplaceAll(msg, token, "***")
-			}
-			return "", fmt.Errorf("git clone %s@%s: %w: %s", repo, target, err, msg)
 		}
 		root = dir
 		remoteMu.Lock()
 		remoteCache[key] = root
 		remoteMu.Unlock()
 	}
-	if sub != "" {
-		set := exec.Command("git", "-C", root, "sparse-checkout", "set", sub)
-		if out, err := set.CombinedOutput(); err != nil {
-			return "", fmt.Errorf("git sparse-checkout %s in %s@%s: %w: %s", sub, repo, target, err, strings.TrimSpace(string(out)))
-		}
-	}
 	full := filepath.Join(root, filepath.FromSlash(sub))
 	if _, err := os.Stat(full); err != nil {
 		return "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, target)
 	}
 	return full, nil
+}
+
+// cloneRepo shallow clones repo into a fresh temp dir using go-git. A ref is
+// tried as a tag then a branch, so both a version tag and a branch name resolve.
+func cloneRepo(repo, branch, ref, token string) (string, error) {
+	auth, err := gitAuth(repo, token)
+	if err != nil {
+		return "", err
+	}
+	var refs []plumbing.ReferenceName
+	if ref != "" {
+		refs = append(refs, plumbing.NewTagReferenceName(ref), plumbing.NewBranchReferenceName(ref))
+	} else {
+		refs = append(refs, plumbing.NewBranchReferenceName(branch))
+	}
+	var lastErr error
+	for _, rn := range refs {
+		dir, err := os.MkdirTemp("", "smig-git-")
+		if err != nil {
+			return "", err
+		}
+		_, err = git.PlainClone(dir, false, &git.CloneOptions{
+			URL:           repo,
+			Auth:          auth,
+			ReferenceName: rn,
+			SingleBranch:  true,
+			Depth:         1,
+			Tags:          git.NoTags,
+		})
+		if err == nil {
+			return dir, nil
+		}
+		os.RemoveAll(dir)
+		lastErr = err
+	}
+	what := ref
+	if what == "" {
+		what = branch
+	}
+	msg := lastErr.Error()
+	if token != "" {
+		msg = strings.ReplaceAll(msg, token, "***")
+	}
+	return "", fmt.Errorf("git clone %s@%s: %s", repo, what, msg)
+}
+
+// gitAuth selects the auth method for a clone. https uses the token as a basic
+// auth password when present; ssh urls use a default key file and fall back to
+// the ssh agent, matching how the git binary resolves credentials; a local path
+// needs no auth.
+func gitAuth(repo, token string) (transport.AuthMethod, error) {
+	switch {
+	case strings.HasPrefix(repo, "https://"), strings.HasPrefix(repo, "http://"):
+		if token != "" {
+			return &githttp.BasicAuth{Username: "x-access-token", Password: token}, nil
+		}
+		return nil, nil
+	case strings.HasPrefix(repo, "git@"), strings.HasPrefix(repo, "ssh://"):
+		return sshAuth(repo)
+	default:
+		return nil, nil
+	}
+}
+
+// sshAuth prefers a passphrase free default key file under ~/.ssh and falls back
+// to the ssh agent, so a clone authenticates the same way the git binary would.
+func sshAuth(repo string) (transport.AuthMethod, error) {
+	if home, err := os.UserHomeDir(); err == nil {
+		for _, name := range []string{"id_ed25519", "id_ecdsa", "id_rsa"} {
+			p := filepath.Join(home, ".ssh", name)
+			if _, err := os.Stat(p); err != nil {
+				continue
+			}
+			if pk, err := gitssh.NewPublicKeysFromFile("git", p, ""); err == nil {
+				return pk, nil
+			}
+		}
+	}
+	auth, err := gitssh.NewSSHAgentAuth("git")
+	if err != nil {
+		return nil, fmt.Errorf("ssh auth for %s: %w", repo, err)
+	}
+	return auth, nil
 }
 
 // fetchURL downloads a non git archive over http, extracts it once per run, and
