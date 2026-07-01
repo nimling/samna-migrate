@@ -37,9 +37,22 @@ vet:
 fmt:
     go fmt ./...
 
-# Run go tests (unit).
-test:
-    go test ./...
+# Run every go test suite: unit, integration, e2e against both test databases, and
+# live. Pass NAME to filter to a single test via -run across all suites. Needs docker.
+test name="": build build-db
+    #!/usr/bin/env bash
+    set -euo pipefail
+    trap 'just db-down' EXIT
+    RUN=""
+    [ -n "{{name}}" ] && RUN="-run {{name}}"
+    go test ./... $RUN
+    PGHOST=localhost PGPORT={{DB_SHELL_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
+        go test ./test/integration/... -tags=integration -count=1 $RUN
+    PGHOST=localhost PGPORT={{DB_SMIG_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
+        go test ./test/e2e/... -tags=e2e -count=1 $RUN
+    PGHOST=localhost PGPORT={{DB_SHELL_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
+        go test ./test/e2e/... -tags=e2e -count=1 $RUN
+    go test ./test/live/... -tags=live $RUN
 
 # Build the shell test db image from database/shell and start it on DB_SHELL_PORT.
 # Image entrypoint runs database/shell/scripts/migrate.sh against migrate.yml.
@@ -93,32 +106,6 @@ db-down:
     @docker rm -f {{DB_SMIG_NAME}} > /dev/null 2>&1 || true
     @docker volume rm {{DB_SMIG_NAME}}-data > /dev/null 2>&1 || true
 
-# Run integration tests against the shell test db (samna_migrate is dropped per
-# test, so this exercises smig taking over a database whose forward migrations
-# are physically applied by the shell tool).
-test-integration: build-db-shell
-    PGHOST=localhost PGPORT={{DB_SHELL_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
-        go test ./test/integration/... -tags=integration -count=1
-    @just db-down
-
-# Run end-to-end smig CLI tests against the smig test db (entrypoint has already
-# applied migrations via smig upgrade + smig up, so schema_version=3 from the start).
-test-e2e: build build-db-smig
-    PGHOST=localhost PGPORT={{DB_SMIG_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
-        go test ./test/e2e/... -tags=e2e -count=1 -v
-    @just db-down
-
-# Run e2e tests against the shell-managed database. Verifies that smig can take
-# over a database where samna_migrate.state was set up by the shell migrate.sh.
-test-e2e-shell: build build-db-shell
-    PGHOST=localhost PGPORT={{DB_SHELL_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
-        go test ./test/e2e/... -tags=e2e -count=1 -v
-    @just db-down
-
-# Run live tests against the real Anthropic API (requires ANTHROPIC_API_KEY).
-test-live:
-    go test ./test/live/... -tags=live
-
 dev *args:
     go run ./cmd {{args}}
 
@@ -129,13 +116,9 @@ help:
     @echo "Available targets:"
     @echo "  build              - Build the smig binary"
     @echo "  install            - Install smig to GOPATH/bin"
-    @echo "  test               - Run unit tests"
+    @echo "  test [NAME]        - Run every suite: unit, integration, e2e, live. NAME filters one test. Needs docker"
     @echo "  build-db-shell     - Build + run shell-managed bookable db on {{DB_SHELL_PORT}}"
     @echo "  build-db-smig      - Build + run smig-managed bookable db on {{DB_SMIG_PORT}}"
     @echo "  build-db           - Build + run both side by side"
     @echo "  db-down            - Tear down both test databases"
-    @echo "  test-integration   - Integration tests against shell-managed db"
-    @echo "  test-e2e           - End-to-end CLI tests against smig-managed db"
-    @echo "  test-e2e-shell     - End-to-end CLI tests against shell-managed db"
-    @echo "  test-live          - Live Anthropic API tests (needs ANTHROPIC_API_KEY)"
     @echo "  dev <args>         - Run smig locally"

@@ -28,7 +28,7 @@ var upgradeCmd = &cobra.Command{
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir
-		if err := confirmUpgrade(cfg); err != nil {
+		if err := confirmDatabase(cfg, "migrate upgrade"); err != nil {
 			return err
 		}
 		d, err := db.Open(ctx, cfg)
@@ -54,20 +54,20 @@ var upgradeCmd = &cobra.Command{
 	},
 }
 
-func confirmUpgrade(cfg *config.Config) error {
+func confirmDatabase(cfg *config.Config, action string) error {
 	if assumeYes {
 		return nil
 	}
 	fi, _ := os.Stdin.Stat()
 	if (fi.Mode() & os.ModeCharDevice) == 0 {
-		return fmt.Errorf("migrate upgrade requires an interactive tty; use --yes to bypass")
+		return fmt.Errorf("%s requires an interactive tty; use --yes to bypass", action)
 	}
 	host := cfg.PGHost
 	if host == "" {
 		host = "localhost"
 	}
-	fmt.Printf("\nmigrate upgrade is sensitive.\n  database: %s@%s\n  user:     %s\n\nType %s to confirm: ",
-		cfg.PGDatabase, host, cfg.PGUser, cfg.PGDatabase)
+	fmt.Printf("\n%s is sensitive.\n  database: %s@%s\n  user:     %s\n\nType %s to confirm: ",
+		action, cfg.PGDatabase, host, cfg.PGUser, cfg.PGDatabase)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
 	if err != nil {

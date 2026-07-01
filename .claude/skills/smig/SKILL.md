@@ -164,6 +164,18 @@ Write the applied file ledger to `samna_migrate.lock.json` in the database direc
 
 Local operator only, AI powered, refuses in CI. Walks applied migration rows in descending order and reverts each. For each step it reuses a cached `down_proposal` if present, otherwise calls the Anthropic Messages API to synthesise the down SQL from the forward SQL and the current database state, validates it inside a rollback transaction, executes it, and writes a `down` history row pointing back at the original apply. Requires `--anthropic-key` or `ANTHROPIC_API_KEY`. `--to <file_path|history_id>` reverts until a target, `--steps N` reverts the N most recent, `--dry-run` prints the proposed down SQL without executing. Always dry run first and show the user the proposed SQL before executing.
 
+### smig dump
+
+Read from a live database, write json to disk. Writes the rows of each selected table to `<schema>.<table>.json` in the output directory, limited to the base tables in the schemas declared by `migrate.yml`. `--all` selects every such table, `--table=<schema.table>` repeatable and comma joined selects a subset, `--out=<dir>` sets the destination and defaults to the current directory. With no selection flag and a terminal, an arrow key list lets the operator pick tables with space, `a` toggles all, enter confirms, then it asks for the output path. Rows encode through `jsonb_agg(to_jsonb(...))` so postgres owns the type fidelity of uuid, numeric, jsonb, and timestamptz. Safe to run anywhere, it only reads.
+
+### smig insert
+
+Load json produced by dump back into its tables. Point it at a folder, which loads every `.json` inside, or at individual files, from positional arguments and repeated `--path` flags; with none the current directory is used. The target table comes from each file name, and rows load through `jsonb_populate_recordset` so columns are typed from the table, generated columns excluded, one transaction per file. `--no-triggers` disables user triggers on the table for the load and re enables them after. This writes rows to the target database, so run it with the intended env and confirm `PGDATABASE` before loading a large dump.
+
+### smig destroy
+
+Destructive teardown, needs docker. Builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files create, and drops that set from the live server: declared schemas other than `public` with `DROP SCHEMA CASCADE`, objects in `public` individually with `DROP ... IF EXISTS CASCADE`, all in one transaction. It then resets `samna_migrate.file` so every row returns to pending and a following `up` re applies from scratch. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. The plan is printed and the database name is required to confirm. `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Never run it without `--dry-run` first and showing the user the plan.
+
 ## Standard workflow
 
 1. `smig upgrade` against the target env, locally, to acknowledge the schema and yaml.
@@ -187,3 +199,7 @@ Local operator only, AI powered, refuses in CI. Walks applied migration rows in 
 5. Do not edit `samna_migrate.lock.json` by hand. `smig lock` and the apply commands own it.
 
 6. Prefer `stat` and `check` to understand state before any write.
+
+7. Never run `destroy` without `--dry-run` first and explicit user confirmation. It drops every object the tree creates and resets the ledger; the only way back is re running `up`.
+
+8. `insert` writes rows and `dump` only reads. Confirm `PGDATABASE` before `insert`, the same as any write path.

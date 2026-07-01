@@ -12,7 +12,7 @@ This repo publishes one artefact: the `smig` CLI, consumed as a Go module via `g
 
 4. Skip `just test`, `just vet`, or `just build` before `just deploy`. A red test, a vet finding, or a failing build must block the bump.
 
-5. Run `go build`, `go test`, or `sbump.sh` directly. The `justfile` recipes are the contract: `just build` injects the version ldflags, `just test` runs the unit suite, `just deploy` bumps and tags.
+5. Run `go build`, `go test`, or `sbump.sh` directly. The `justfile` recipes are the contract: `just build` injects the version ldflags, `just test` runs every test suite, `just deploy` bumps and tags.
 
 6. Ship a change to `internal/upgrade/sql/` without bumping `SchemaVersion` in `pkg/cli/` and adding the matching `upgrade_to_<n>.sql` step. The boot check on every deployed consumer compares the two.
 
@@ -20,7 +20,7 @@ This repo publishes one artefact: the `smig` CLI, consumed as a Go module via `g
 
 1. Add or extend tests for any change with an observable contract: package level `_test.go` files for pure logic, `test/integration/` for paths that need a real postgres, `test/e2e/` for CLI level behaviour.
 
-2. Run `just test-integration` and `just test-e2e` when the change touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/reconcile`, or `internal/schema`. These need docker and the `../bookable_server_test/` sibling checkout.
+2. `just test` runs the integration and e2e suites along with the unit tests, so it needs docker and the `../bookable_server_test/` sibling checkout, especially when the change touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/reconcile`, or `internal/schema`.
 
 3. Write a single sentence commit message that describes the user visible change. The release notes derive from `git log` after the tag.
 

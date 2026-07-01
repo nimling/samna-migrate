@@ -17,6 +17,9 @@ smig lint       Static checks on every step file. No database needed.
 smig lock       Write the applied ledger to samna_migrate.lock.json for lint to guard.
 smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
 smig down       Revert applied migrations with an Anthropic agent that synthesizes the down SQL. Local only.
+smig dump       Dump table data to json, one <schema>.<table>.json per table.
+smig insert     Insert rows from <schema>.<table>.json files back into their tables.
+smig destroy    Drop every object the migrate.yml tree creates, then reset the ledger. Needs docker.
 ```
 
 ## Agent guide
@@ -38,6 +41,14 @@ The object analysis tracks every created object globally across all files and co
 The git section (`--git`), when the folder is a git repository, prints the real `git diff` of each changed, dropped, or reordered file between the commit it was deployed from and the working tree. The deployed commit is captured into `samna_migrate.file.applied_commit` during `smig up`, `smig rebase`, and `smig merge --apply`. It is silently skipped when the folder is not a git repo or a file is untracked.
 
 The database comparison (`--db`) starts a local docker postgres, applies every local file from `--db-dir` into it resiliently, introspects the produced objects, and compares them object for object against the live server across every kind: functions, tables and columns, constraints, indexes, triggers, views, types, sequences, grants, and comments. Each difference renders as a unified DDL diff of the current live definition against the definition the files produce, with a remediation direction and an apply phase. Table columns are compared by name, not by position, so a reordered column is never a false difference; a real column difference is an add, drop, or alter per column, and a dropped column marks the change destructive. Objects owned by an extension via `pg_depend`, such as the `pgcrypto` functions, are recognized and never reported as drop on live. When the build does not complete, every only-in-live verdict is downgraded to review because the missing object may belong to a file that failed to build. The files apply with their step `pre` and `vars` expanded from the environment, so run reconcile with the deploy env; a build failure is recorded and reported without stopping the other sections. `--keep` leaves the container and candidate tree for inspection. `--image` overrides the postgres docker image, which otherwise follows the live server major version.
+
+## Data and teardown
+
+`smig dump` writes the rows of each selected table to `<schema>.<table>.json` in the output directory, one file per table, limited to the base tables in the schemas declared by `migrate.yml`. `--all` dumps every such table, `--table=<schema.table>` repeatable and comma joined dumps a subset, `--out=<dir>` sets the destination and defaults to the current directory. With no selection flag and a terminal it opens an arrow key list: space toggles a table, `a` toggles all, enter confirms, then it asks for the output path. Each file is a json array of row objects encoded by postgres with `jsonb_agg(to_jsonb(...))`, so uuid, numeric, jsonb, and timestamptz round trip exactly.
+
+`smig insert` loads those files back. Point it at a folder, which loads every `.json` inside, or at individual files, taken from positional arguments and repeated `--path` flags; with none the current directory is used. Each file's target table is read from its name, and rows load through `jsonb_populate_recordset` so every column is typed from the table itself, generated columns excluded. `--no-triggers` disables user triggers on the table for the load and re enables them after.
+
+`smig destroy` tears a database down to nothing the tree defines. It builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files produce, and drops that set from the live server: declared schemas other than `public` with `DROP SCHEMA CASCADE`, objects in `public` one by one with `DROP ... IF EXISTS CASCADE`, all in one transaction. It then resets `samna_migrate.file` so every row returns to pending and a following `up` re applies from scratch. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. The plan is printed for review and the database name is required to confirm; `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Needs docker.
 
 ## Drift guarding
 
@@ -70,13 +81,16 @@ just install   # installs smig to $GOPATH/bin
 
 ## Testing against the vendored bookable snapshot
 
-The repo carries a full bookable database tree twice under `database/`: `database/shell/` is applied by its bash `migrate.sh` entrypoint, `database/smig/` by the smig binary itself. `just build-db-shell` runs the shell managed image on port `5435`, `just build-db-smig` the smig managed image on port `5436`, both clear of the bookable dev cycle ports. `just test-integration` and `just test-e2e` build the image they need, run the tagged suite, and tear down.
+The repo carries a full bookable database tree twice under `database/`: `database/shell/` is applied by its bash `migrate.sh` entrypoint, `database/smig/` by the smig binary itself. `just build-db-shell` runs the shell managed image on port `5435`, `just build-db-smig` the smig managed image on port `5436`, both clear of the bookable dev cycle ports.
+
+`just test` runs the whole suite: the unit tests, the integration tests against the shell image, the e2e CLI tests against both the smig and shell images, and the live Anthropic tests which skip without `ANTHROPIC_API_KEY`. It builds both images first and tears them down after, so it needs docker. `just test <name>` filters to a single test by passing `-run <name>` to every suite.
 
 ## Layout
 
 ```
 cmd/                  entrypoint
-internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, lock, rebase, down
+internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, lock, rebase, down, dump, insert, destroy
+internal/data/        json data dump and insert, teardown drop planner
 internal/config/      env and dotenv loader
 internal/db/          pgxpool wrapper and psql delegate
 internal/schema/      samna_migrate.* state helpers

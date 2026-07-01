@@ -92,7 +92,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	var candInv map[string]string
 	if verdicts.Bootstrap {
 		log.Header("verdict equality: candidate against live")
-		schemas := schemaUnion(stepsCfg)
+		schemas := SchemaUnion(stepsCfg)
 		liveInv, err := Inventory(ctx, live, schemas)
 		if err != nil {
 			return err
@@ -194,6 +194,10 @@ type ContainerDiff struct {
 	extObjs     map[string]string
 }
 
+func (c *ContainerDiff) Candidate() map[string]string {
+	return c.cand
+}
+
 func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
 	candidateDir, candSteps, err := materializeCandidate(stepsCfg, cfg.StepsFile, dbDir, "")
 	if err != nil {
@@ -231,7 +235,7 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	}
 	log.Info("deployed %d of %d files into the container, %d build errors", total-len(buildErrs), total, len(buildErrs))
 
-	schemas := schemaUnion(stepsCfg)
+	schemas := SchemaUnion(stepsCfg)
 	liveInv, err := Inventory(ctx, live, schemas)
 	if err != nil {
 		return nil, err
@@ -317,7 +321,7 @@ func buildCandidateResilient(ctx context.Context, cand *db.DB, candCfg *config.C
 	return len(pendings), errs, nil
 }
 
-func schemaUnion(stepsCfg *steps.Config) []string {
+func SchemaUnion(stepsCfg *steps.Config) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, st := range stepsCfg.Steps {
