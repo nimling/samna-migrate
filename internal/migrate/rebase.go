@@ -15,7 +15,6 @@ import (
 	"github.com/nimling/samna-migrate/internal/db"
 	"github.com/nimling/samna-migrate/internal/git"
 	"github.com/nimling/samna-migrate/internal/hash"
-	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/reconcile"
 	"github.com/nimling/samna-migrate/internal/steps"
@@ -46,9 +45,7 @@ between the prior body and the new body is shown as a git style diff under -v.
 the state a history squash leaves behind, so up stops refusing on a file the
 ledger applied but the tree no longer carries. It folds only orphaned migration
 entries and never touches pending files. Run reconcile --db first to confirm the
-folded migrations' objects are still produced by the tree.
-
-Refreshes ` + lock.FileName + ` when it exists.`,
+folded migrations' objects are still produced by the tree.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
@@ -199,7 +196,7 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 
 	log.Plain("")
 	log.Success("mirrored %d file(s)", mirrored)
-	return refreshLock(ctx, d, cfg)
+	return nil
 }
 
 func registerRebaseFile(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config, fp, diskSha string, size int64, content, commit, host string, rightEdge int) error {
@@ -335,7 +332,7 @@ func runRebaseUndo(ctx context.Context, d *db.DB, cfg *config.Config, targets []
 
 	log.Plain("")
 	log.Success("restored %d file(s)", restored)
-	return refreshLock(ctx, d, cfg)
+	return nil
 }
 
 func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config) error {
@@ -425,7 +422,7 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 
 	log.Plain("")
 	log.Success("folded %d orphaned entry(s)", pruned)
-	return refreshLock(ctx, d, cfg)
+	return nil
 }
 
 func confirmPrune(cfg *config.Config, files []string) error {
@@ -449,17 +446,6 @@ func confirmPrune(cfg *config.Config, files []string) error {
 	}
 	if strings.TrimSpace(line) != cfg.PGDatabase {
 		return fmt.Errorf("confirmation mismatch, aborting")
-	}
-	return nil
-}
-
-func refreshLock(ctx context.Context, d *db.DB, cfg *config.Config) error {
-	refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, cli.Version)
-	if err != nil {
-		return err
-	}
-	if refreshed {
-		log.Info("refreshed %s", lock.Path(dbDir))
 	}
 	return nil
 }

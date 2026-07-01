@@ -2,11 +2,9 @@ package migrate
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/lint"
-	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/steps"
 	"github.com/spf13/cobra"
@@ -22,7 +20,6 @@ var lintCmd = &cobra.Command{
   error  filename grammar violations on any step
   error  session_replication_role usage
   error  COMMENT ON FUNCTION without an argument signature
-  error  locked files modified or missing, when ` + lock.FileName + ` exists
   warn   CREATE TYPE without a pg_type existence guard
   warn   CREATE INDEX, ADD COLUMN, or CREATE FUNCTION without their
          idempotent form in migration files
@@ -38,11 +35,7 @@ Errors exit nonzero. --strict treats warnings as errors.`,
 		if err != nil {
 			return err
 		}
-		lockPath := lock.Path(dbDir)
-		if _, err := os.Stat(lockPath); err != nil {
-			lockPath = ""
-		}
-		r, err := lint.Run(stepsCfg, dbDir, lockPath)
+		r, err := lint.Run(stepsCfg, dbDir)
 		if err != nil {
 			return err
 		}
@@ -52,9 +45,6 @@ Errors exit nonzero. --strict treats warnings as errors.`,
 			} else {
 				log.Warn("  %s  %s", f.File, f.Message)
 			}
-		}
-		if lockPath == "" {
-			log.Info("no %s found, locked file checks skipped. Generate one with smig lock", lock.FileName)
 		}
 		log.Plain("errors=%d warnings=%d", r.Errors, r.Warnings)
 		if r.Errors > 0 || (lintStrict && r.Warnings > 0) {

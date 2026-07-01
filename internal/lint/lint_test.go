@@ -38,7 +38,7 @@ func TestLintCommentOnFunctionWithoutSignature(t *testing.T) {
 		"CREATE OR REPLACE FUNCTION public.f() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;\nCOMMENT ON FUNCTION public.f IS 'x';")
 	writeStep(t, dbDir, "migrations", "V1.1__base_good_comment.sql",
 		"CREATE OR REPLACE FUNCTION public.g(a INT) RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;\nCOMMENT ON FUNCTION public.g(INT) IS 'x';")
-	r, err := Run(twoStepConfig(), dbDir, "")
+	r, err := Run(twoStepConfig(), dbDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,7 @@ func TestLintIdempotencyWarnings(t *testing.T) {
 	writeStep(t, dbDir, "migrations", "V1.1__base_column.sql", "ALTER TABLE public.a ADD COLUMN n INT;")
 	writeStep(t, dbDir, "migrations", "V1.2__base_function.sql", "CREATE FUNCTION public.h() RETURNS void AS $$ BEGIN END $$ LANGUAGE plpgsql;")
 	writeStep(t, dbDir, "base", "V1.0__base_guarded.sql", "CREATE INDEX bar_idx ON public.b(id);")
-	r, err := Run(twoStepConfig(), dbDir, "")
+	r, err := Run(twoStepConfig(), dbDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +73,7 @@ func TestLintSessionReplicationRoleAndGrammar(t *testing.T) {
 	dbDir := t.TempDir()
 	writeStep(t, dbDir, "base", "V1.0__base_roles.sql", "SET session_replication_role = replica;")
 	writeStep(t, dbDir, "base", "badname.sql", "SELECT 1;")
-	r, err := Run(twoStepConfig(), dbDir, "")
+	r, err := Run(twoStepConfig(), dbDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestLintCreateTypeGuard(t *testing.T) {
 	writeStep(t, dbDir, "base", "V1.0__base_bare_type.sql", "CREATE TYPE public.s AS ENUM ('a');")
 	writeStep(t, dbDir, "base", "V1.1__base_guarded_type.sql",
 		"DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 's2') THEN CREATE TYPE public.s2 AS ENUM ('a'); END IF; END $$;")
-	r, err := Run(twoStepConfig(), dbDir, "")
+	r, err := Run(twoStepConfig(), dbDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +106,7 @@ func TestLintMultiWordSlug(t *testing.T) {
 	cfg := &steps.Config{Steps: []steps.Step{
 		{Name: "DebugUser", Type: "seed", Slug: "debug_user", Include: []steps.IncludeEntry{{Path: "debug_user/"}}},
 	}}
-	r, err := Run(cfg, dbDir, "")
+	r, err := Run(cfg, dbDir)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,7 +14,6 @@ smig stat       Print current state and per step file counts.
 smig merge      Rebase live SQL into .upgraded/; --apply moves it in; --revert restores a snapshot.
 smig reconcile  Diff the local folder against the live server as a git diff: --files, --objects, --git, --db sections, --json for machine output.
 smig lint       Static checks on every step file. No database needed.
-smig lock       Write the applied ledger to samna_migrate.lock.json for lint to guard.
 smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
 smig down       Revert applied migrations with an Anthropic agent that synthesizes the down SQL. Local only.
 smig dump       Dump table data to json, one <schema>.<table>.json per table.
@@ -52,20 +51,18 @@ The database comparison (`--db`) starts a local docker postgres, applies every l
 
 ## Drift guarding
 
-`smig lint` walks every step file and reports filename grammar violations on any step, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` existence guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero; `--strict` promotes warnings. With `samna_migrate.lock.json` present, lint also rejects any locked file that was edited or deleted, which catches checksum tampering at the keystroke instead of at the deploy preflight.
-
-`smig lock` writes the lockfile from the applied rows in `samna_migrate.file`. Commit it. `smig up`, `smig rebase`, and `smig merge --apply` refresh it automatically when it exists.
+`smig lint` walks every step file and reports filename grammar violations on any step, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` existence guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero; `--strict` promotes warnings. It reads only the files on disk and runs every check every time, no database needed.
 
 `smig rebase` mirrors the local file structure into `samna_migrate` as the deployed truth. With no arguments it mirrors the whole tree; with file paths it mirrors only those files. Each mirror writes the disk sha and body into `samna_migrate.file` and first snapshots the prior body into a history row with `action_type = 'rebase'`, so the change is reversible. `--undo` restores the most recent snapshot for each target file and `--undo-id <history_id>` restores one specific snapshot, both recorded with `action_type = 'rebase_undo'`. The diff between the prior body and the new body shows under `-v`. Confirmation prompts for the database name; `--yes` bypasses.
 
-Preflight treats a drifted base or seed file as a replay: the row flips back to pending and the next `smig up` applies it again. A drifted applied migration stays fatal. An applied migration missing from disk is fatal; a missing base or seed file warns.
+Preflight treats a drifted base or seed file as a replay: the row flips back to pending and the next `smig up` applies it again. A drifted applied migration stays fatal. An applied migration missing from disk is fatal; a missing base or seed file warns. This is the sha tamper check, run against `samna_migrate.file` on `check` and `up`.
 
 ## Workflow
 
 1. Local operator runs `smig upgrade` against the target env. Confirmation prompt asks for the database name.
 2. Phase A walks the schema chain to the current `SCHEMA_VERSION`. Phase B writes `yaml_sha256` and `tool_version` into `samna_migrate.state`.
 3. CI or any non local caller runs `smig up`. The strict `boot_check` requires equality on `schema_version`, `tool_version`, `yaml_sha256` and refuses to apply if anything is behind.
-4. `smig lint` runs in PR CI and pre commit with the committed lockfile, so locked file edits and non idempotent SQL never reach a deploy.
+4. `smig lint` runs in PR CI and pre commit, so non idempotent SQL never reaches a deploy.
 
 ## Verbosity
 
@@ -74,22 +71,18 @@ Every command shares one output vocabulary. The default level prints headers, se
 ## Building
 
 ```
-just deps      # go mod tidy
-just build     # produces bin/smig
-just install   # installs smig to $GOPATH/bin
+just build     # produces bin/smig with version ldflags
 ```
 
-## Testing against the vendored bookable snapshot
+## Testing
 
-The repo carries a full bookable database tree twice under `database/`: `database/shell/` is applied by its bash `migrate.sh` entrypoint, `database/smig/` by the smig binary itself. `just build-db-shell` runs the shell managed image on port `5435`, `just build-db-smig` the smig managed image on port `5436`, both clear of the bookable dev cycle ports.
-
-`just test` runs the whole suite: the unit tests, the integration tests against the shell image, the e2e CLI tests against both the smig and shell images, and the live Anthropic tests which skip without `ANTHROPIC_API_KEY`. It builds both images first and tears them down after, so it needs docker. `just test <name>` filters to a single test by passing `-run <name>` to every suite.
+`just test-go` runs the go tests with no docker. `just test-docker` builds a fake bookable postgres from `database/smig` with the smig binary at image init and runs the tool's docker backed suites against it on `DB_PORT`, default 5436, overridable in `.env`. `just test` runs both. `test-docker` needs docker.
 
 ## Layout
 
 ```
 cmd/                  entrypoint
-internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, lock, rebase, down, dump, insert, destroy
+internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, rebase, down, dump, insert, destroy
 internal/data/        json data dump and insert, teardown drop planner
 internal/config/      env and dotenv loader
 internal/db/          pgxpool wrapper and psql delegate
@@ -101,7 +94,6 @@ internal/reconcile/   file and object audit, git style diff, container proof
 internal/sqlscan/     SQL statement and object scanner
 internal/merge/       rebase live SQL into .upgraded/
 internal/lint/        static step file checks
-internal/lock/        lockfile reader and writer
 internal/steps/       migrate.yml parser
 internal/log/         ansi styled output and diff rendering
 pkg/cli/              version and schema version constants

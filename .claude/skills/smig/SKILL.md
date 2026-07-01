@@ -59,15 +59,15 @@ Read only. Prints `samna_migrate.state` and recent history with per step file co
 
 ### smig check
 
-Read only preflight. Runs `boot_check` then scans disk against the ledger and reports new, unchanged, drift, and missing counts. No writes. Use it to answer whether `up` would apply cleanly without applying. Drift or missing files surface here as warnings.
+Read only preflight. Runs `boot_check` then scans disk against the ledger and reports new, unchanged, drift, and missing counts. No writes. Use it to answer whether `up` would apply cleanly without applying. Drift or missing files surface here as warnings. This is the sha tamper check: a migration whose disk bytes differ from `samna_migrate.file.sha256` is fatal.
 
 ### smig lint
 
-Static checks on every step file, no database needed. Reports filename grammar violations, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero. `--strict` promotes warnings to errors. With `samna_migrate.lock.json` present it also rejects any locked file that was edited or deleted. Run it before proposing any SQL change and in PR CI.
+Static checks on every step file, no database needed. Reports filename grammar violations, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero. `--strict` promotes warnings to errors. Every check runs every time. Run it before proposing any SQL change and in PR CI.
 
 Each step in `migrate.yml` declares a `type`, required and one of `base` for baseline DDL, `migration` for schema migrations, or `seed` for non DDL seeded data. A `base` or `seed` step declares a `slug` naming the area it deploys to. A `migration` step declares no slug, because its files each target an area owned by another step. `Load` rejects a missing or invalid type, a slug on a migration step, and a missing slug on a base or seed step.
 
-The filename grammar is `V<version>__<slug>_<name>.sql`: a `V` prefix, a dot separated integer version whose leading component is at least 1, the `__` separator, a lowercase alphanumeric slug, an underscore, and a `<name>` of lowercase alphanumerics and underscores. The slug and the name are both required and the version never starts at 0. The `<slug>` must be one of the slugs declared by the steps in `migrate.yml`; `lint` flags any file whose slug names no declared area. So with steps declaring the slugs `claimius` and `base`, `V1.0__claimius_roles.sql` is valid, while `V1.0__roles.sql`, `V0.0__claimius_roles.sql`, and `V1.0__widget_roles.sql` are all rejected. `ParseFilename` and `Config.Slugs` in `internal/steps/steps.go`, and `FILENAME_GRAMMAR` in `database/shell/scripts/migrate.sh`, carry the grammar.
+The filename grammar is `V<version>__<slug>_<name>.sql`: a `V` prefix, a dot separated integer version whose leading component is at least 1, the `__` separator, a lowercase alphanumeric slug, an underscore, and a `<name>` of lowercase alphanumerics and underscores. The slug and the name are both required and the version never starts at 0. The `<slug>` must be one of the slugs declared by the steps in `migrate.yml`; `lint` flags any file whose slug names no declared area. So with steps declaring the slugs `claimius` and `base`, `V1.0__claimius_roles.sql` is valid, while `V1.0__roles.sql`, `V0.0__claimius_roles.sql`, and `V1.0__widget_roles.sql` are all rejected. `ParseFilename` and `Config.Slugs` in `internal/steps/steps.go` carry the grammar.
 
 An include entry resolves from a local folder, a git repo, or a url. The local form is `path` with an optional `fallback`. The git form is `git` for the repo, `branch` for the branch to track, `ref` for a tag or commit to pin, `token` for https auth, `key` for ssh auth, and `path` for the subfolder inside that repo; smig shallow clones the ref in process with go-git and reads only that subfolder, so no `git` binary is required. `ref` wins when set, otherwise `branch` is used, and `branch` itself defaults to `main`, so an entry with only `git` and `path` tracks the latest `main`. For https a private repo uses `token`, or `GITHUB_TOKEN` from the environment when `token` is unset. For ssh, `key`, or `SMIG_SSH_KEY` from the environment, is a key file path or inline key material with an optional `SMIG_SSH_KEY_PASSWORD`; with no key set smig prefers a default `~/.ssh` key file and falls back to the ssh agent. The url form is `url` to an archive with `path` as the subfolder inside it. Every remote field is environment expanded, so `ref: $MIDDLEWARE_VERSION` reads from the env loaded for the run. A local include that is missing is skipped; a git or url include that fails to resolve is a hard error. Resolution is in `internal/steps/steps.go`. Example pulling a prophet claimius set straight from the middleware:
 
@@ -84,7 +84,7 @@ Local operator only. Walks the `samna_migrate` schema chain to the tool `SchemaV
 
 ### smig up
 
-Apply pending migrations. Runs `boot_check`, then preflight, then applies every pending file in order, recording sha, body, and deployed commit. This is the deploy path. A drifted base or seed file is treated as a replay and reapplied; a drifted applied migration is fatal; an applied migration missing from disk is fatal. Refreshes the lockfile when one exists. Run with the deploy env.
+Apply pending migrations. Runs `boot_check`, then preflight, then applies every pending file in order, recording sha, body, and deployed commit. This is the deploy path. A drifted base or seed file is treated as a replay and reapplied; a drifted applied migration is fatal; an applied migration missing from disk is fatal. Run with the deploy env.
 
 ### smig reconcile
 
@@ -154,11 +154,7 @@ Rebase live SQL into a staging tree and optionally promote it. Three modes:
 
 Mirror the on disk file content into `samna_migrate` as the deployed truth, reversibly. With no arguments it mirrors the whole tree; with file paths it mirrors only those. Each mirror snapshots the prior body into a history row with `action_type = 'rebase'` first, so `--undo` restores the most recent snapshot and `--undo-id <history_id>` restores one specific snapshot. Use it to align the ledger to disk without reapplying SQL, for example after fixing a body that already matches live. `--reason` records why. Prompts for the database name.
 
-`--prune` is the other direction of aligning the ledger to disk. It folds every applied migration row whose file is absent from the source tree, setting `state = 'folded'` and writing a `fold` history row per entry, then refreshes the lockfile. This is the state a history squash leaves: migration files were folded into the baseline and deleted from the tree, but the live ledger still carries them as applied, so `up` aborts with `applied but absent from the source tree`. `rebase --prune` clears exactly those rows and leaves pending files untouched, so a following `up` applies the genuinely new migrations. Run `reconcile --db` first to confirm the tree still produces the folded migrations' objects against live; the only-in-live bucket must hold nothing beyond what the squash intentionally dropped. Mirror, by contrast, would stamp pending files as applied without running their SQL, so prune is the correct tool for orphaned entries.
-
-### smig lock
-
-Write the applied file ledger to `samna_migrate.lock.json` in the database directory. Commit the file. `smig lint` then rejects any edit to a locked file, catching checksum drift at the keystroke. `up`, `rebase`, and `merge --apply` refresh the lockfile automatically when it exists.
+`--prune` is the other direction of aligning the ledger to disk. It folds every applied migration row whose file is absent from the source tree, setting `state = 'folded'` and writing a `fold` history row per entry. This is the state a history squash leaves: migration files were folded into the baseline and deleted from the tree, but the live ledger still carries them as applied, so `up` aborts with `applied but absent from the source tree`. `rebase --prune` clears exactly those rows and leaves pending files untouched, so a following `up` applies the genuinely new migrations. Run `reconcile --db` first to confirm the tree still produces the folded migrations' objects against live; the only-in-live bucket must hold nothing beyond what the squash intentionally dropped. Mirror, by contrast, would stamp pending files as applied without running their SQL, so prune is the correct tool for orphaned entries.
 
 ### smig down
 
@@ -180,7 +176,7 @@ Destructive teardown, needs docker. Builds every `migrate.yml` file into a throw
 
 1. `smig upgrade` against the target env, locally, to acknowledge the schema and yaml.
 
-2. `smig lint` in pre commit and PR CI with the committed lockfile.
+2. `smig lint` in pre commit and PR CI.
 
 3. `smig up` from CI. `boot_check` enforces equality on schema_version, tool_version, and yaml_sha256 and refuses if anything is behind.
 
@@ -196,10 +192,8 @@ Destructive teardown, needs docker. Builds every `migrate.yml` file into a throw
 
 4. Run write commands with the same env as the real deploy. A wrong `PGDATABASE` writes to the wrong server.
 
-5. Do not edit `samna_migrate.lock.json` by hand. `smig lock` and the apply commands own it.
+5. Prefer `stat` and `check` to understand state before any write.
 
-6. Prefer `stat` and `check` to understand state before any write.
+6. Never run `destroy` without `--dry-run` first and explicit user confirmation. It drops every object the tree creates and resets the ledger; the only way back is re running `up`.
 
-7. Never run `destroy` without `--dry-run` first and explicit user confirmation. It drops every object the tree creates and resets the ledger; the only way back is re running `up`.
-
-8. `insert` writes rows and `dump` only reads. Confirm `PGDATABASE` before `insert`, the same as any write path.
+7. `insert` writes rows and `dump` only reads. Confirm `PGDATABASE` before `insert`, the same as any write path.

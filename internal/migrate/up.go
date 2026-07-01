@@ -9,7 +9,6 @@ import (
 	"github.com/nimling/samna-migrate/internal/apply"
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/db"
-	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/preflight"
 	"github.com/nimling/samna-migrate/internal/schema"
@@ -120,13 +119,6 @@ var upCmd = &cobra.Command{
 		}
 		log.Plain("")
 		log.Success("applied %d files in %s", applied, time.Since(start).Round(time.Millisecond))
-
-		refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, cli.Version)
-		if err != nil {
-			log.Warn("lockfile refresh: %v", err)
-		} else if refreshed {
-			log.Info("refreshed %s", lock.Path(dbDir))
-		}
 		return nil
 	},
 }

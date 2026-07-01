@@ -24,7 +24,6 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | `reconcile` | no | Diff the local tree against a live server in depth. |
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
 | `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. |
-| `lock` | lockfile | Write the applied file ledger to `samna_migrate.lock.json`. |
 | `down` | yes | AI assisted revert of applied migrations. Refuses in CI. |
 | `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |
 | `insert` | yes | Insert rows from `<schema>.<table>.json` files back into their tables. |

@@ -47,7 +47,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	}
 
 	log.Header("lint candidate tree")
-	lr, err := lint.Run(candStepsCfg, candidateDir, "")
+	lr, err := lint.Run(candStepsCfg, candidateDir)
 	if err != nil {
 		return err
 	}

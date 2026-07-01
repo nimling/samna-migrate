@@ -17,7 +17,6 @@ import (
 	"github.com/nimling/samna-migrate/internal/db"
 	"github.com/nimling/samna-migrate/internal/git"
 	"github.com/nimling/samna-migrate/internal/hash"
-	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/reconcile"
 	"github.com/nimling/samna-migrate/internal/steps"
@@ -177,13 +176,6 @@ func Apply(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Co
 		                                    started_at, ended_at, notes)
 		VALUES ('apply', $1, 'merge_apply', $2, $3, $4, $5, 0, true, now(), now(), $6)`,
 		snapDir, toolVersion, cfg.PGUser, hostOrLocal(cfg), cfg.PGDatabase, notes)
-
-	refreshed, err := lock.RefreshIfPresent(ctx, d, dbDir, cfg.PGDatabase, toolVersion)
-	if err != nil {
-		log.Warn("lockfile refresh: %v", err)
-	} else if refreshed {
-		log.Info("refreshed %s", lock.Path(dbDir))
-	}
 
 	log.Success("apply complete  moved=%d folded=%d rekeyed=%d", totalMoved, folded, rekeyed)
 	log.Plain("snapshot retained at %s", snapDir)

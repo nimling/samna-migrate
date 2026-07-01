@@ -6,8 +6,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nimling/samna-migrate/internal/hash"
-	"github.com/nimling/samna-migrate/internal/lock"
 	"github.com/nimling/samna-migrate/internal/steps"
 )
 
@@ -43,11 +41,10 @@ var (
 	rxDupObjectGuard  = regexp.MustCompile(`(?i)duplicate_object`)
 )
 
-func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
+func Run(stepsCfg *steps.Config, dbDir string) (*Result, error) {
 	r := &Result{}
 
 	validSlugs := stepsCfg.Slugs()
-	onDisk := map[string]string{}
 	for _, st := range stepsCfg.Steps {
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
@@ -63,29 +60,7 @@ func Run(stepsCfg *steps.Config, dbDir, lockPath string) (*Result, error) {
 			if err != nil {
 				return nil, fmt.Errorf("read %s: %w", f.Rel, err)
 			}
-			content := string(b)
-			checkContent(r, f.Rel, st.Type, content)
-			sha, err := hash.File(f.AbsPath)
-			if err != nil {
-				return nil, err
-			}
-			onDisk[f.Rel] = sha
-		}
-	}
-
-	if lockPath != "" {
-		lf, err := lock.Read(lockPath)
-		if err == nil {
-			for _, e := range lf.Files {
-				sha, ok := onDisk[e.FilePath]
-				if !ok {
-					r.add(e.FilePath, "error", "locked file is missing on disk. Restore it or rebuild the lockfile with smig lock")
-					continue
-				}
-				if sha != e.Sha256 {
-					r.add(e.FilePath, "error", "locked file modified after apply. Use smig rebase, never edit in place")
-				}
-			}
+			checkContent(r, f.Rel, st.Type, string(b))
 		}
 	}
 
