@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,50 @@ func TestResolveFilesGitSubfolder(t *testing.T) {
 	}
 	if len(files) != 2 || !got["V1.0__claimius_roles.sql"] || !got["V1.1__claimius_baseline.sql"] {
 		t.Fatalf("git subfolder resolved %#v", files)
+	}
+}
+
+func TestResolveFilesGitStableIdentity(t *testing.T) {
+	repo := t.TempDir()
+	sub := filepath.Join(repo, "prophet", "database")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(filepath.Join(sub, "V1.0__claimius_roles.sql"), []byte("-- roles"), 0o644)
+	for _, args := range [][]string{
+		{"init", "-q", "-b", "trunk"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "add", "-A"},
+		{"-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "init"},
+		{"tag", "v1.0.0"},
+	} {
+		if out, err := runGit(repo, args...); err != nil {
+			t.Fatalf("git %v: %v: %s", args, err, out)
+		}
+	}
+	step := &Step{
+		Name: "Claimius", Type: "base", Slug: "claimius",
+		Include: []IncludeEntry{{Git: repo, Ref: "v1.0.0", Path: "prophet/database"}},
+	}
+	a, err := step.ResolveFiles(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve a: %v", err)
+	}
+	b, err := step.ResolveFiles(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve b: %v", err)
+	}
+	if len(a) != 1 || len(b) != 1 {
+		t.Fatalf("resolved a=%d b=%d", len(a), len(b))
+	}
+	want := filepath.Join("prophet", "database", "V1.0__claimius_roles.sql")
+	if a[0].Rel != want {
+		t.Fatalf("git identity = %q, want in source path %q", a[0].Rel, want)
+	}
+	if a[0].Rel != b[0].Rel {
+		t.Fatalf("git identity unstable across resolutions: %q vs %q", a[0].Rel, b[0].Rel)
+	}
+	if strings.Contains(a[0].Rel, "smig-git-") || strings.Contains(a[0].Rel, "..") {
+		t.Fatalf("git identity leaks the throwaway clone path: %q", a[0].Rel)
 	}
 }
 

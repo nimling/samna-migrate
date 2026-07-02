@@ -55,9 +55,24 @@ func ListPending(ctx context.Context, d *db.DB) ([]Pending, error) {
 
 // File runs a single pending file via psql with the step's `pre` SQL prefix.
 func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string) error {
-	abs := p.FilePath
-	if !filepath.IsAbs(abs) {
-		abs = filepath.Join(dbDir, p.FilePath)
+	abs := ""
+	if st != nil {
+		files, resErr := st.ResolveFiles(dbDir)
+		if resErr != nil {
+			return resErr
+		}
+		for _, f := range files {
+			if f.Rel == p.FilePath {
+				abs = f.AbsPath
+				break
+			}
+		}
+	}
+	if abs == "" {
+		abs = p.FilePath
+		if !filepath.IsAbs(abs) {
+			abs = filepath.Join(dbDir, p.FilePath)
+		}
 	}
 	raw, err := os.ReadFile(abs)
 	if err != nil {

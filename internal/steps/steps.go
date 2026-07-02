@@ -128,37 +128,42 @@ var (
 	remoteCache = map[string]string{}
 )
 
-// source materializes the include into a local directory or file path. A local
-// path resolves through path then fallback and reports found=false when neither
-// exists. A git or url source is fetched once per run and any failure is
-// returned as an error rather than skipped.
-func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
+// source materializes the include into a local directory or file path. It
+// returns the readBase to read file bytes from and the identBase that file
+// identities are taken relative to. For a git or url source the identBase is the
+// fetched root, so a file's identity is its stable in source path independent of
+// the throwaway clone dir. For a local source the identBase is the db dir, so
+// the identity stays relative to the tree on disk. A local path resolves through
+// path then fallback and reports found=false when neither exists. A git or url
+// source is fetched once per run and any failure is returned as an error rather
+// than skipped.
+func (inc IncludeEntry) source(dbDir string) (readBase string, identBase string, found bool, err error) {
 	switch {
 	case inc.Git != "":
-		dir, err := fetchGit(inc.Git, inc.Branch, inc.Ref, inc.Path, inc.Token, inc.Key)
+		root, full, err := fetchGit(inc.Git, inc.Branch, inc.Ref, inc.Path, inc.Token, inc.Key)
 		if err != nil {
-			return "", false, err
+			return "", "", false, err
 		}
-		return dir, true, nil
+		return full, root, true, nil
 	case inc.URL != "":
 		dir, err := fetchURL(inc.URL, inc.Path)
 		if err != nil {
-			return "", false, err
+			return "", "", false, err
 		}
-		return dir, true, nil
+		return dir, dir, true, nil
 	default:
 		base := resolveIncludePath(dbDir, inc.Path)
 		if _, err := os.Stat(base); err == nil {
-			return base, true, nil
+			return base, dbDir, true, nil
 		}
 		if inc.Fallback == "" {
-			return "", false, nil
+			return "", "", false, nil
 		}
 		base = resolveIncludePath(dbDir, inc.Fallback)
 		if _, err := os.Stat(base); err == nil {
-			return base, true, nil
+			return base, dbDir, true, nil
 		}
-		return "", false, nil
+		return "", "", false, nil
 	}
 }
 
@@ -168,7 +173,7 @@ func (inc IncludeEntry) source(dbDir string) (string, bool, error) {
 // expanded. A token, taken from the include or from GITHUB_TOKEN, authenticates
 // https for private repos; an ssh key, taken from the include or from
 // SMIG_SSH_KEY, authenticates ssh urls.
-func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, error) {
+func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, string, error) {
 	repo = os.ExpandEnv(repo)
 	branch = strings.TrimSpace(os.ExpandEnv(branch))
 	ref = strings.TrimSpace(os.ExpandEnv(ref))
@@ -191,7 +196,7 @@ func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, error) {
 	if !ok {
 		dir, err := cloneRepo(repo, branch, ref, token, sshKey)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		root = dir
 		remoteMu.Lock()
@@ -200,9 +205,9 @@ func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, error) {
 	}
 	full := filepath.Join(root, filepath.FromSlash(sub))
 	if _, err := os.Stat(full); err != nil {
-		return "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, target)
+		return "", "", fmt.Errorf("subfolder %q not found in %s@%s", sub, repo, target)
 	}
-	return full, nil
+	return root, full, nil
 }
 
 // cloneRepo shallow clones repo into a fresh temp dir using go-git. A ref is
@@ -423,7 +428,7 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 		excludes[filepath.Base(e.Path)] = true
 	}
 	for _, inc := range s.Include {
-		base, found, err := inc.source(dbDir)
+		base, identBase, found, err := inc.source(dbDir)
 		if err != nil {
 			return nil, err
 		}
@@ -451,7 +456,7 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 					continue
 				}
 				abs := filepath.Join(base, name)
-				rel := relOrName(dbDir, abs)
+				rel := relOrName(identBase, abs)
 				if seen[rel] {
 					continue
 				}
@@ -469,7 +474,7 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 			if excludes[name] {
 				continue
 			}
-			rel := relOrName(dbDir, base)
+			rel := relOrName(identBase, base)
 			if seen[rel] {
 				return files, nil
 			}
