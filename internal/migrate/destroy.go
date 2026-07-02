@@ -3,6 +3,8 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/data"
@@ -14,7 +16,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var destroyDryRun bool
+var (
+	destroyDryRun     bool
+	destroyExtensions bool
+)
 
 var destroyCmd = &cobra.Command{
 	Use:   "destroy",
@@ -23,9 +28,11 @@ var destroyCmd = &cobra.Command{
 the objects those files produce, then drops that set from the live database.
 
 Declared schemas other than public are dropped with DROP SCHEMA CASCADE. Objects in
-public are dropped individually with DROP ... IF EXISTS CASCADE. The samna_migrate
-ledger is reset so every file returns to pending and a following up re-applies from
-scratch. Requires docker for the candidate build.`,
+public are dropped individually with DROP ... IF EXISTS CASCADE. Objects owned by an
+extension, such as the functions pgcrypto installs, are excluded so the individual
+drops do not fail. The samna_migrate ledger is always dropped so a following up
+re-applies from scratch. With --extensions the extensions the tree creates are dropped
+too (plpgsql is never dropped). Requires docker for the candidate build.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
@@ -63,6 +70,30 @@ scratch. Requires docker for the candidate build.`,
 		}
 
 		plan := data.PlanDrop(cd.Candidate(), schemas)
+		extObjs, err := reconcile.ExtensionObjects(ctx, d, schemas)
+		if err != nil {
+			return err
+		}
+		if len(extObjs) > 0 {
+			kept := plan.Objects[:0]
+			for _, o := range plan.Objects {
+				if _, owned := extObjs[o.Kind+" "+o.Ident]; owned {
+					continue
+				}
+				kept = append(kept, o)
+			}
+			plan.Objects = kept
+		}
+		if destroyExtensions {
+			for id := range cd.Candidate() {
+				name, ok := strings.CutPrefix(id, "extension ")
+				if !ok || name == "plpgsql" {
+					continue
+				}
+				plan.Extensions = append(plan.Extensions, name)
+			}
+			sort.Strings(plan.Extensions)
+		}
 		if plan.Empty() {
 			log.Success("nothing the tree creates is present, database untouched")
 			return nil
@@ -75,7 +106,11 @@ scratch. Requires docker for the candidate build.`,
 		for _, o := range plan.Objects {
 			log.Warn("  %s %s", o.Kind, o.Ident)
 		}
-		log.Info("%d schema(s), %d object(s) in public", len(plan.Schemas), len(plan.Objects))
+		for _, e := range plan.Extensions {
+			log.Warn("  DROP EXTENSION %s CASCADE", e)
+		}
+		log.Warn("  DROP SCHEMA samna_migrate CASCADE")
+		log.Info("%d schema(s), %d object(s) in public, %d extension(s)", len(plan.Schemas), len(plan.Objects), len(plan.Extensions))
 
 		if destroyDryRun {
 			log.Info("dry run: nothing dropped")
@@ -88,7 +123,7 @@ scratch. Requires docker for the candidate build.`,
 		if err := executeDestroy(ctx, d, plan); err != nil {
 			return err
 		}
-		log.Success("destroyed %d schema(s) and %d object(s)", len(plan.Schemas), len(plan.Objects))
+		log.Success("destroyed %d schema(s), %d object(s), %d extension(s), and the samna_migrate ledger", len(plan.Schemas), len(plan.Objects), len(plan.Extensions))
 		return nil
 	},
 }
@@ -109,35 +144,19 @@ func executeDestroy(ctx context.Context, d *db.DB, plan *data.DropPlan) error {
 			return fmt.Errorf("drop %s %s: %w", o.Kind, o.Ident, err)
 		}
 	}
-	var hasFile bool
-	if err := tx.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM information_schema.tables
-			WHERE table_schema = 'samna_migrate' AND table_name = 'file')`).Scan(&hasFile); err != nil {
-		return err
-	}
-	if hasFile {
-		if _, err := tx.Exec(ctx, `
-			UPDATE samna_migrate.file SET
-			    state                   = 'pending',
-			    state_changed_at        = now(),
-			    applied_at              = NULL,
-			    applied_history_id      = NULL,
-			    applied_sha256          = NULL,
-			    applied_sql             = NULL,
-			    applied_commit          = NULL,
-			    applied_position        = NULL,
-			    last_applied_at         = NULL,
-			    last_applied_history_id = NULL,
-			    updated_at              = now()
-			WHERE state <> 'pending'`); err != nil {
-			return fmt.Errorf("reset ledger: %w", err)
+	for _, e := range plan.Extensions {
+		if _, err := tx.Exec(ctx, fmt.Sprintf(`DROP EXTENSION IF EXISTS %s CASCADE`, data.QuoteIdent(e))); err != nil {
+			return fmt.Errorf("drop extension %s: %w", e, err)
 		}
+	}
+	if _, err := tx.Exec(ctx, `DROP SCHEMA IF EXISTS samna_migrate CASCADE`); err != nil {
+		return fmt.Errorf("drop ledger: %w", err)
 	}
 	return tx.Commit(ctx)
 }
 
 func init() {
 	destroyCmd.Flags().BoolVar(&destroyDryRun, "dry-run", false, "Print the destroy plan without dropping anything")
+	destroyCmd.Flags().BoolVar(&destroyExtensions, "extensions", false, "Also drop the extensions the tree creates (plpgsql is never dropped)")
 	rootCmd.AddCommand(destroyCmd)
 }

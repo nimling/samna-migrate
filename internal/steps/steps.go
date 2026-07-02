@@ -536,7 +536,15 @@ func compareVersion(a, b string) int {
 }
 
 func relOrName(dbDir, abs string) string {
-	rel, err := filepath.Rel(dbDir, abs)
+	absDir, err := filepath.Abs(dbDir)
+	if err != nil {
+		absDir = dbDir
+	}
+	absPath, err := filepath.Abs(abs)
+	if err != nil {
+		absPath = abs
+	}
+	rel, err := filepath.Rel(absDir, absPath)
 	if err != nil {
 		return abs
 	}

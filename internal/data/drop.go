@@ -12,12 +12,13 @@ type DropObj struct {
 }
 
 type DropPlan struct {
-	Schemas []string
-	Objects []DropObj
+	Schemas    []string
+	Objects    []DropObj
+	Extensions []string
 }
 
 func (p *DropPlan) Empty() bool {
-	return len(p.Schemas) == 0 && len(p.Objects) == 0
+	return len(p.Schemas) == 0 && len(p.Objects) == 0 && len(p.Extensions) == 0
 }
 
 var dropOrder = map[string]int{

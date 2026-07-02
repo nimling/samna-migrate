@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -54,7 +55,10 @@ func ListPending(ctx context.Context, d *db.DB) ([]Pending, error) {
 
 // File runs a single pending file via psql with the step's `pre` SQL prefix.
 func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string) error {
-	abs := dbDir + "/" + p.FilePath
+	abs := p.FilePath
+	if !filepath.IsAbs(abs) {
+		abs = filepath.Join(dbDir, p.FilePath)
+	}
 	raw, err := os.ReadFile(abs)
 	if err != nil {
 		return fmt.Errorf("file missing on disk: %s", abs)

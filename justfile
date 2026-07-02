@@ -15,6 +15,9 @@ default:
 build:
     go build {{LDFLAGS}} -o bin/smig ./cmd
 
+install: build
+    install -m 755 bin/smig `go env GOPATH`/bin/smig
+
 deploy level="patch":
     @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --workflow
 

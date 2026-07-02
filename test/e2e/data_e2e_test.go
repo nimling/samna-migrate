@@ -77,6 +77,9 @@ func TestSmigDestroyDryRunDropsNothing(t *testing.T) {
 	if !strings.Contains(combined, "dry run") {
 		t.Errorf("expected dry run marker: %s", combined)
 	}
+	if !strings.Contains(combined, "DROP SCHEMA samna_migrate CASCADE") {
+		t.Errorf("expected samna_migrate ledger drop in plan: %s", combined)
+	}
 
 	var n int
 	if err := p.QueryRow(ctx, `
