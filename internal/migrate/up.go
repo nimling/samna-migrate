@@ -3,6 +3,7 @@ package migrate
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -144,6 +145,25 @@ func groupPending(pendings []apply.Pending, stepsCfg *steps.Config, dbDir string
 			groups = append(groups, g)
 		}
 		g.files = append(g.files, p)
+	}
+	stepOrder := map[string]int{}
+	for i, st := range stepsCfg.Steps {
+		stepOrder[st.Name] = i
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		return stepOrder[groups[i].name] < stepOrder[groups[j].name]
+	})
+	for _, g := range groups {
+		sort.SliceStable(g.files, func(i, j int) bool {
+			vi, _, _, oki := steps.ParseFilename(g.files[i].FileName)
+			vj, _, _, okj := steps.ParseFilename(g.files[j].FileName)
+			if oki && okj {
+				if c := steps.CompareVersion(vi, vj); c != 0 {
+					return c < 0
+				}
+			}
+			return g.files[i].FileName < g.files[j].FileName
+		})
 	}
 	return groups, nil
 }

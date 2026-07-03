@@ -46,16 +46,16 @@ func (e *IncludeEntry) UnmarshalYAML(node *yaml.Node) error {
 }
 
 type Step struct {
-	Name     string            `yaml:"name"`
-	Type     string            `yaml:"type"`
-	Slug     string            `yaml:"slug"`
-	Schemas  []string          `yaml:"schemas"`
-	If       string            `yaml:"if"`
-	Vars     map[string]string `yaml:"vars"`
-	Include  []IncludeEntry    `yaml:"include"`
-	Exclude  []IncludeEntry    `yaml:"exclude"`
-	Pre      string            `yaml:"pre,omitempty"`
-	Post     string            `yaml:"post,omitempty"`
+	Name    string            `yaml:"name"`
+	Type    string            `yaml:"type"`
+	Slug    string            `yaml:"slug"`
+	Schemas []string          `yaml:"schemas"`
+	If      string            `yaml:"if"`
+	Vars    map[string]string `yaml:"vars"`
+	Include []IncludeEntry    `yaml:"include"`
+	Exclude []IncludeEntry    `yaml:"exclude"`
+	Pre     string            `yaml:"pre,omitempty"`
+	Post    string            `yaml:"post,omitempty"`
 }
 
 type Config struct {
@@ -492,7 +492,7 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 		vi, _, _, oki := ParseFilename(files[i].Name)
 		vj, _, _, okj := ParseFilename(files[j].Name)
 		if oki && okj {
-			if c := compareVersion(vi, vj); c != 0 {
+			if c := CompareVersion(vi, vj); c != 0 {
 				return c < 0
 			}
 		}
@@ -501,10 +501,10 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 	return files, nil
 }
 
-// compareVersion orders dotted numeric versions component by component, so
+// CompareVersion orders dotted numeric versions component by component, so
 // V1.2 precedes V1.10 and V5.0 precedes V10.0, where a plain string sort would
 // not. Non numeric components fall back to string comparison.
-func compareVersion(a, b string) int {
+func CompareVersion(a, b string) int {
 	as := strings.Split(a, ".")
 	bs := strings.Split(b, ".")
 	n := len(as)
