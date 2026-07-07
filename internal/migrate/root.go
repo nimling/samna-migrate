@@ -405,7 +405,10 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&cli.AnthropicKey, "anthropic-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&cli.Model, "model", "claude-sonnet-4-6", "Claude model id for AI commands")
 
+	upCmd.Flags().BoolVarP(&upInteractive, "interactive", "i", false, "Choose a stop point from a grouped list of pending files")
+	runCmd.Flags().BoolVarP(&runInteractive, "interactive", "i", false, "Choose a single step or file from a grouped list")
 	rootCmd.AddCommand(upCmd)
+	rootCmd.AddCommand(runCmd)
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(statCmd)
 	rootCmd.AddCommand(checkCmd)

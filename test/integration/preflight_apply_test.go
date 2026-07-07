@@ -132,7 +132,7 @@ func TestApplyHappyPath(t *testing.T) {
 	for _, p := range pendings {
 		st, _ := apply.FileRel(stepsCfg, p.FilePath, dbDir)
 		if err := apply.File(ctx, x.D, p, st, dbDir, cli.Version,
-			os.Getenv("PGUSER"), "localhost", os.Getenv("PGDATABASE")); err != nil {
+			os.Getenv("PGUSER"), "localhost", os.Getenv("PGDATABASE"), false); err != nil {
 			t.Fatalf("apply %s: %v", p.FilePath, err)
 		}
 	}

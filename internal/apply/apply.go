@@ -53,8 +53,32 @@ func ListPending(ctx context.Context, d *db.DB) ([]Pending, error) {
 	return out, rows.Err()
 }
 
-// File runs a single pending file via psql with the step's `pre` SQL prefix.
-func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string) error {
+func ListFiles(ctx context.Context, d *db.DB) ([]Pending, error) {
+	rows, err := d.Pool.Query(ctx, `
+		SELECT id, file_path, file_name, step_name, step_type, slug, version,
+		       sha256, size_bytes, position
+		FROM samna_migrate.file
+		ORDER BY position`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []Pending{}
+	for rows.Next() {
+		var p Pending
+		var ver *string
+		if err := rows.Scan(&p.ID, &p.FilePath, &p.FileName, &p.StepName, &p.StepType, &p.Slug, &ver,
+			&p.Sha, &p.Size, &p.Position); err != nil {
+			return nil, err
+		}
+		p.Version = ver
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
+// File runs a single file via psql with the step's `pre` SQL prefix. External files record history with a null file_id and leave the ledger untouched.
+func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string, external bool) error {
 	abs := ""
 	if st != nil {
 		files, resErr := st.ResolveFiles(dbDir)
@@ -111,6 +135,11 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		attempt = 1
 	}
 
+	actionType := "apply"
+	if external {
+		actionType = "external"
+	}
+
 	var histID int
 	err = d.Pool.QueryRow(ctx, `
 		INSERT INTO samna_migrate.history
@@ -118,17 +147,24 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		     sha256, size_bytes, attempt, action_type, tool_version,
 		     executed_by, host, database, duration_ms, success, error_message,
 		     started_at, ended_at, position, yaml_sha256, applied_sql, applied_commit, applied_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'apply', $11,
+		VALUES (NULLIF($1, 0), $2, $3, $4, $5, $6, $7, $8, $9, $10, $24, $11,
 		        $12, $13, $14, $15, $16, NULLIF($17, ''),
 		        $18, $19, $20, NULLIF($21, ''), $22, NULLIF($23, ''), now())
 		RETURNING id`,
 		p.ID, p.StepName, p.StepType, p.Slug, p.Version, p.FileName, p.FilePath,
 		p.Sha, p.Size, attempt, toolVersion,
 		executedBy, host, database, durMs, success, errMsg,
-		start, end, p.Position, yamlSha, content, commit,
+		start, end, p.Position, yamlSha, content, commit, actionType,
 	).Scan(&histID)
 	if err != nil {
 		return fmt.Errorf("write history: %w", err)
+	}
+
+	if external {
+		if success {
+			return nil
+		}
+		return runErr
 	}
 
 	if success {

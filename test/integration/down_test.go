@@ -62,7 +62,7 @@ steps:
 	for _, p := range pendings {
 		st, _ := apply.FileRel(stepsCfg, p.FilePath, dbDir)
 		if err := apply.File(ctx, d, p, st, dbDir, cli.Version,
-			os.Getenv("PGUSER"), "localhost", os.Getenv("PGDATABASE")); err != nil {
+			os.Getenv("PGUSER"), "localhost", os.Getenv("PGDATABASE"), false); err != nil {
 			t.Fatal(err)
 		}
 	}

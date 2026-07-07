@@ -292,7 +292,7 @@ func bootstrapCandidate(ctx context.Context, cand *db.DB, candCfg *config.Config
 	for _, p := range pendings {
 		st, _ := apply.FileRel(candStepsCfg, p.FilePath, candidateDir)
 		log.Detail("  %s", p.FilePath)
-		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase); err != nil {
+		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase, false); err != nil {
 			return fmt.Errorf("%s: %w", p.FilePath, err)
 		}
 	}
@@ -311,7 +311,7 @@ func buildCandidateResilient(ctx context.Context, cand *db.DB, candCfg *config.C
 	var errs []BuildError
 	for _, p := range pendings {
 		st, _ := apply.FileRel(candStepsCfg, p.FilePath, candidateDir)
-		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase); err != nil {
+		if err := apply.File(ctx, cand, p, st, candidateDir, toolVersion, candCfg.PGUser, candCfg.PGHost, candCfg.PGDatabase, false); err != nil {
 			errs = append(errs, BuildError{File: p.FilePath, Err: err.Error()})
 			log.Detail("  %s  FAILED  %v", p.FilePath, err)
 		} else {

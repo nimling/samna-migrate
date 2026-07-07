@@ -1,9 +1,12 @@
 package migrate
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,9 +22,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var upInteractive bool
+
 var upCmd = &cobra.Command{
-	Use:   "up",
+	Use:   "up [target]",
 	Short: "Apply pending migrations after preflight",
+	Args:  cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
@@ -82,6 +88,27 @@ var upCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		ordered := flatten(groups)
+
+		target := ""
+		if len(args) == 1 {
+			target = args[0]
+		}
+		limit := len(ordered) - 1
+		if upInteractive && target == "" {
+			lim, tok, perr := promptTarget(os.Stdin, ordered)
+			if perr != nil {
+				return perr
+			}
+			limit, target = lim, tok
+		} else if target != "" {
+			lim, rerr := resolveTarget(target, ordered)
+			if rerr != nil {
+				return rerr
+			}
+			limit = lim
+		}
+
 		rightEdge := 0
 		for _, g := range groups {
 			if w := 2 + len(g.name) + 2 + len(fmt.Sprintf("%d applied", len(g.files))); w > rightEdge {
@@ -103,23 +130,30 @@ var upCmd = &cobra.Command{
 
 		applied := 0
 		start := time.Now()
-		for _, g := range groups {
-			log.Section(g.name, fmt.Sprintf("%d applied", len(g.files)), rightEdge)
-			logStepInternals(g.st)
-			headerShown := false
-			for _, p := range g.files {
-				fileStart := time.Now()
-				if err := apply.File(ctx, d, p, g.st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase); err != nil {
-					return fmt.Errorf("%s failed: %w", p.FilePath, err)
-				}
-				log.Step(p.FileName, time.Since(fileStart).Round(time.Millisecond).String(), rightEdge)
-				log.Detail("      sha %s  size %dB  pos %d", shortSha(p.Sha), p.Size, p.Position)
-				logObjects(objCols, objByFile[p.FilePath], fileContent[p.FilePath], p.FileName, &headerShown)
-				applied++
+		var cur *pendingGroup
+		headerShown := false
+		for i := 0; i <= limit; i++ {
+			o := ordered[i]
+			if o.g != cur {
+				cur = o.g
+				log.Section(o.g.name, fmt.Sprintf("%d applied", groupCountWithin(ordered, o.g, limit)), rightEdge)
+				logStepInternals(o.g.st)
+				headerShown = false
 			}
+			fileStart := time.Now()
+			if err := apply.File(ctx, d, o.p, o.g.st, dbDir, cli.Version, executedBy, host, cfg.PGDatabase, false); err != nil {
+				return fmt.Errorf("%s failed: %w", o.p.FilePath, err)
+			}
+			log.Step(o.p.FileName, time.Since(fileStart).Round(time.Millisecond).String(), rightEdge)
+			log.Detail("      sha %s  size %dB  pos %d", shortSha(o.p.Sha), o.p.Size, o.p.Position)
+			logObjects(objCols, objByFile[o.p.FilePath], fileContent[o.p.FilePath], o.p.FileName, &headerShown)
+			applied++
 		}
 		log.Plain("")
 		log.Success("applied %d files in %s", applied, time.Since(start).Round(time.Millisecond))
+		if remain := len(ordered) - 1 - limit; remain > 0 {
+			log.Info("stopped after %s, %d pending file(s) remain", target, remain)
+		}
 		return nil
 	},
 }
@@ -166,6 +200,175 @@ func groupPending(pendings []apply.Pending, stepsCfg *steps.Config, dbDir string
 		})
 	}
 	return groups, nil
+}
+
+type orderedPending struct {
+	p apply.Pending
+	g *pendingGroup
+}
+
+func flatten(groups []*pendingGroup) []orderedPending {
+	out := []orderedPending{}
+	for _, g := range groups {
+		for _, p := range g.files {
+			out = append(out, orderedPending{p: p, g: g})
+		}
+	}
+	return out
+}
+
+func groupCountWithin(ordered []orderedPending, g *pendingGroup, limit int) int {
+	n := 0
+	for i := 0; i <= limit && i < len(ordered); i++ {
+		if ordered[i].g == g {
+			n++
+		}
+	}
+	return n
+}
+
+func fileToken(name string) string {
+	v, s, _, ok := steps.ParseFilename(name)
+	if !ok {
+		return ""
+	}
+	return s + ":" + v
+}
+
+func resolveTarget(target string, ordered []orderedPending) (int, error) {
+	t := strings.TrimSpace(target)
+	if t == "" || strings.EqualFold(t, "all") {
+		return len(ordered) - 1, nil
+	}
+	if n, err := strconv.Atoi(t); err == nil {
+		if n < 1 || n > len(ordered) {
+			return -1, fmt.Errorf("target %q out of range, pick 1 to %d", t, len(ordered))
+		}
+		return n - 1, nil
+	}
+	if slug, ver, ok := strings.Cut(t, ":"); ok {
+		for i, o := range ordered {
+			fv, fs, _, pok := steps.ParseFilename(o.p.FileName)
+			if pok && strings.EqualFold(fs, slug) && fv == ver {
+				return i, nil
+			}
+		}
+		return -1, fmt.Errorf("no pending file matches slug:version %q", t)
+	}
+	last := -1
+	for i, o := range ordered {
+		if strings.EqualFold(o.g.st.Slug, t) {
+			last = i
+		}
+	}
+	if last >= 0 {
+		return last, nil
+	}
+	return -1, fmt.Errorf("target %q matched no number, slug:version, or step slug", t)
+}
+
+func renderList(ordered []orderedPending) string {
+	var b strings.Builder
+	var cur *pendingGroup
+	for i, o := range ordered {
+		if o.g != cur {
+			cur = o.g
+			meta := "type=" + o.g.st.Type
+			if o.g.st.Slug != "" {
+				meta += " slug=" + o.g.st.Slug
+			}
+			b.WriteString(fmt.Sprintf("\n▸ %s  %s\n", o.g.name, meta))
+		}
+		b.WriteString(fmt.Sprintf("  %3d  %-44s  %s\n", i+1, o.p.FileName, fileToken(o.p.FileName)))
+	}
+	b.WriteString("\n")
+	return b.String()
+}
+
+func selectTargets(target string, ordered []orderedPending) ([]int, error) {
+	t := strings.TrimSpace(target)
+	if t == "" {
+		return nil, fmt.Errorf("run requires a target or --interactive")
+	}
+	if n, err := strconv.Atoi(t); err == nil {
+		if n < 1 || n > len(ordered) {
+			return nil, fmt.Errorf("target %q out of range, pick 1 to %d", t, len(ordered))
+		}
+		return []int{n - 1}, nil
+	}
+	if slug, ver, ok := strings.Cut(t, ":"); ok {
+		for i, o := range ordered {
+			fv, fs, _, pok := steps.ParseFilename(o.p.FileName)
+			if pok && strings.EqualFold(fs, slug) && fv == ver {
+				return []int{i}, nil
+			}
+		}
+		return nil, fmt.Errorf("no file matches slug:version %q", t)
+	}
+	for i, o := range ordered {
+		if strings.EqualFold(o.p.FileName, t) {
+			return []int{i}, nil
+		}
+	}
+	for i, o := range ordered {
+		if o.p.FilePath == t {
+			return []int{i}, nil
+		}
+	}
+	idxs := []int{}
+	for i, o := range ordered {
+		if strings.EqualFold(o.g.st.Slug, t) {
+			idxs = append(idxs, i)
+		}
+	}
+	if len(idxs) > 0 {
+		return idxs, nil
+	}
+	return nil, fmt.Errorf("target %q matched no number, slug:version, file name, path, or step slug", t)
+}
+
+func readToken(r *bufio.Reader, hint string, validate func(string) error) (string, error) {
+	for {
+		fmt.Print(hint)
+		line, err := r.ReadString('\n')
+		tok := strings.TrimSpace(line)
+		if tok == "" {
+			if err != nil {
+				return "", fmt.Errorf("no selection provided")
+			}
+			continue
+		}
+		if verr := validate(tok); verr != nil {
+			log.Warn("%v", verr)
+			if err != nil {
+				return "", verr
+			}
+			continue
+		}
+		return tok, nil
+	}
+}
+
+func promptTarget(in io.Reader, ordered []orderedPending) (int, string, error) {
+	fmt.Print(renderList(ordered))
+	tok, err := readToken(bufio.NewReader(in), "stop after which migration?  number | slug | slug:version | all  › ",
+		func(t string) error { _, e := resolveTarget(t, ordered); return e })
+	if err != nil {
+		return 0, "", err
+	}
+	limit, _ := resolveTarget(tok, ordered)
+	return limit, tok, nil
+}
+
+func promptRun(in io.Reader, ordered []orderedPending) ([]int, string, error) {
+	fmt.Print(renderList(ordered))
+	tok, err := readToken(bufio.NewReader(in), "run which step or file?  number | slug | slug:version  › ",
+		func(t string) error { _, e := selectTargets(t, ordered); return e })
+	if err != nil {
+		return nil, "", err
+	}
+	idxs, _ := selectTargets(tok, ordered)
+	return idxs, tok, nil
 }
 
 func logStepInternals(st *steps.Step) {

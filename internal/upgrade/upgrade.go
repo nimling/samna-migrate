@@ -28,7 +28,10 @@ var upgradeTo5SQL string
 //go:embed sql/upgrade_to_6.sql
 var upgradeTo6SQL string
 
-const TargetVersion = 6
+//go:embed sql/upgrade_to_7.sql
+var upgradeTo7SQL string
+
+const TargetVersion = 7
 
 func stepSQL(version int) (string, error) {
 	switch version {
@@ -44,6 +47,8 @@ func stepSQL(version int) (string, error) {
 		return upgradeTo5SQL, nil
 	case 6:
 		return upgradeTo6SQL, nil
+	case 7:
+		return upgradeTo7SQL, nil
 	default:
 		return "", fmt.Errorf("no upgrade step defined for %d", version)
 	}
