@@ -1,6 +1,6 @@
 ---
 name: smig
-description: Drive the smig database migration CLI as an AI agent. Explains every command, when to reach for it, the apply pipeline, the reconcile report, and the safety rules that bound writes against a live database.
+description: Drives the smig database migration CLI. Explains every command, the apply pipeline, the reconcile report, and the safety rules that bound writes against a live database. Use when running migrations, checking migration state, diagnosing schema drift, running a single step or file, seeding, dumping or inserting table data, destroying and rebuilding a database, or invoking any smig command.
 ---
 
 # smig
@@ -84,7 +84,13 @@ Local operator only. Walks the `samna_migrate` schema chain to the tool `SchemaV
 
 ### smig up
 
-Apply pending migrations. Runs `boot_check`, then preflight, then applies every pending file in order, recording sha, body, and deployed commit. This is the deploy path. A drifted base or seed file is treated as a replay and reapplied; a drifted applied migration is fatal; an applied migration missing from disk is fatal. Run with the deploy env.
+Apply pending migrations. Runs `boot_check`, then preflight, then applies every pending file in order, recording sha, body, and deployed commit. Pending files order by step order and version, not discovery position. This is the deploy path. A drifted base or seed file is treated as a replay and reapplied; a drifted applied migration is fatal; an applied migration missing from disk is fatal. Run with the deploy env.
+
+`up [target]` stops after the named file instead of applying everything. `-i` / `--interactive` presents the grouped pending list and lets the operator pick the stop point. The target grammar is shared with `run`: a 1 based number from the list, a `slug:version` pair like `claimius:2.4`, a file name, a file path, or a step slug.
+
+### smig run
+
+Run exactly one step or SQL file from the tree, recording the apply in the ledger like `up` does. Takes the same target grammar as `up`: number, `slug:version`, file name, file path, or step slug, where a step slug runs every pending file of that step. `-i` / `--interactive` presents the grouped list for picking. A path that resolves to a SQL file outside the tree is refused unless `--force`, which executes it as an external file recorded with an `external` marker. Use `run` to reapply a single seed or push one file ahead of a full `up`; use `--force` external runs only for one off corrective SQL the user has reviewed.
 
 ### smig reconcile
 
@@ -170,7 +176,7 @@ Load json produced by dump back into its tables. Point it at a folder, which loa
 
 ### smig destroy
 
-Destructive teardown, needs docker. Builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files create, and drops that set from the live server: declared schemas other than `public` with `DROP SCHEMA CASCADE`, objects in `public` individually with `DROP ... IF EXISTS CASCADE`, all in one transaction. It then resets `samna_migrate.file` so every row returns to pending and a following `up` re applies from scratch. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. The plan is printed and the database name is required to confirm. `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Never run it without `--dry-run` first and showing the user the plan.
+Destructive teardown, needs docker. Builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files create, and drops that set from the live server: declared schemas other than `public` with schema level cascade drops, objects in `public` individually with `DROP ... IF EXISTS CASCADE`, all in one transaction. Objects owned by an extension, such as the functions pgcrypto installs, are excluded so the individual drops do not fail. The `samna_migrate` ledger is always dropped so a following `up` re applies from scratch. `--extensions` also drops the extensions the tree creates, never `plpgsql`. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. `--image` overrides the candidate postgres image, needed when the tree requires extensions the plain image lacks, for example `--image=pgvector/pgvector:pg17` for a tree creating the vector extension; without it the candidate build fails and the plan misses every downstream object. The plan is printed and the database name is required to confirm. `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Never run it without `--dry-run` first and showing the user the plan, and never execute a destroy whose dry run reports build errors.
 
 ## Standard workflow
 
