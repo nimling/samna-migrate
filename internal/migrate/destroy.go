@@ -19,6 +19,7 @@ import (
 var (
 	destroyDryRun     bool
 	destroyExtensions bool
+	destroyImage      string
 )
 
 var destroyCmd = &cobra.Command{
@@ -58,7 +59,7 @@ too (plpgsql is never dropped). Requires docker for the candidate build.`,
 		schemas := reconcile.SchemaUnion(stepsCfg)
 
 		log.Header("destroy: build candidate to learn what the tree creates")
-		cd, err := reconcile.CompareToLive(ctx, d, cfg, stepsCfg, dbDir, cli.Version, reconcile.Options{})
+		cd, err := reconcile.CompareToLive(ctx, d, cfg, stepsCfg, dbDir, cli.Version, reconcile.Options{Image: destroyImage})
 		if err != nil {
 			return err
 		}
@@ -158,5 +159,6 @@ func executeDestroy(ctx context.Context, d *db.DB, plan *data.DropPlan) error {
 func init() {
 	destroyCmd.Flags().BoolVar(&destroyDryRun, "dry-run", false, "Print the destroy plan without dropping anything")
 	destroyCmd.Flags().BoolVar(&destroyExtensions, "extensions", false, "Also drop the extensions the tree creates (plpgsql is never dropped)")
+	destroyCmd.Flags().StringVar(&destroyImage, "image", "", "Postgres image for the candidate build, defaults to the live server major version")
 	rootCmd.AddCommand(destroyCmd)
 }
