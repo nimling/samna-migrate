@@ -24,6 +24,7 @@ var (
 	rxExtension  = regexp.MustCompile(`(?i)\bCREATE\s+EXTENSION\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|([a-z0-9_]+))`)
 	rxLanguage   = regexp.MustCompile(`(?i)\bLANGUAGE\s+(?:"([^"]+)"|([a-z0-9_]+))`)
 	rxMakeLang   = regexp.MustCompile(`(?i)\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:TRUSTED\s+)?(?:PROCEDURAL\s+)?LANGUAGE\s+(?:"([^"]+)"|([a-z0-9_]+))`)
+	rxRoutine    = regexp.MustCompile(`(?i)\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:\w+\s+)*?(?:FUNCTION|PROCEDURE)\b`)
 	rxMakeRole   = regexp.MustCompile(`(?i)\bCREATE\s+(?:ROLE|USER|GROUP)\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|([a-z0-9_]+))`)
 	rxGrantTo    = regexp.MustCompile(`(?is)\bGRANT\b.*?\bTO\s+(.*?)(?:\bWITH\b|\bGRANTED\s+BY\b|;|$)`)
 	rxRevokeFrom = regexp.MustCompile(`(?is)\bREVOKE\b.*?\bFROM\s+(.*?)(?:\bGRANTED\s+BY\b|\bCASCADE\b|\bRESTRICT\b|;|$)`)
@@ -112,7 +113,7 @@ func scanStatement(stmt string, reqExt, reqLang, reqRole, provLang, provRole map
 	for _, m := range rxMakeRole.FindAllStringSubmatch(stmt, -1) {
 		addName(provRole, pick(m))
 	}
-	if lead == "CREATE" {
+	if lead == "CREATE" && rxRoutine.MatchString(stmt) {
 		for _, m := range rxLanguage.FindAllStringSubmatch(stmt, -1) {
 			addName(reqLang, pick(m))
 		}
