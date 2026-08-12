@@ -5,6 +5,8 @@ RUN go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/
+COPY skill.go ./
+COPY .claude/skills/smig/ ./.claude/skills/smig/
 RUN CGO_ENABLED=0 go build -o /smig ./cmd
 
 FROM postgres:17-alpine

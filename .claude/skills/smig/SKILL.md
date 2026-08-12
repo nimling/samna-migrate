@@ -31,7 +31,7 @@ Every successful apply stores the raw `.sql` body and its sha256 in `samna_migra
 
 6. Understand divergence between the tree and a live server, or author corrective SQL: `reconcile`.
 
-7. Align the ledger to disk without executing SQL: `rebase`. Clear orphaned applied migrations after a squash: `rebase --prune`.
+7. Align the ledger to disk without executing SQL: `rebase`. Make it describe the current file structure after a fold or a rename: `rebase --prune`, scoped with `--prune=<step>`.
 
 8. Pull live SQL back into the tree: `merge`.
 
@@ -51,7 +51,7 @@ Full per command detail, every flag, and the target grammar are in `references/c
 
 Step types, the `V<version>__<slug>_<name>.sql` filename grammar, and how an include entry resolves from a folder, a git repo, or a url are in `references/authoring.md`.
 
-The identity of a file in the ledger is its path relative to the database directory. Renaming a file makes it a new file to every server, so pair any rename with a scoped `rebase` before the next `up`.
+The identity of a file in the ledger is its path relative to the database directory. Renaming a file makes it a new file to every server, so pair any rename with `rebase --prune` before the next `up`.
 
 ## Reconcile
 

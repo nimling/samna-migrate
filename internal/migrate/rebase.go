@@ -26,7 +26,7 @@ var (
 	rebaseReason string
 	rebaseUndo   bool
 	rebaseUndoID int
-	rebasePrune  bool
+	rebasePrune  string
 )
 
 var rebaseCmd = &cobra.Command{
@@ -41,11 +41,12 @@ rebase, so the change is reversible. --undo restores the most recent snapshot fo
 each target file; --undo-id <history_id> restores one specific snapshot. The diff
 between the prior body and the new body is shown as a git style diff under -v.
 
---prune folds every applied migration entry that is absent from the source tree,
-the state a history squash leaves behind, so up stops refusing on a file the
-ledger applied but the tree no longer carries. It folds only orphaned migration
-entries and never touches pending files. Run reconcile --db first to confirm the
-folded migrations' objects are still produced by the tree.`,
+--prune makes samna_migrate describe the current file structure. Every applied
+entry absent from the source tree is folded, and every file on disk is recorded
+as applied at its own content. Bare --prune covers every step; a value scopes it
+to one step by type, slug or name, so --prune=migration folds the entries a
+history squash leaves behind. Confirming the prompt is the statement that the
+local tree is the deployed truth.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {
@@ -70,7 +71,7 @@ folded migrations' objects are still produced by the tree.`,
 			return err
 		}
 
-		if rebasePrune {
+		if cmd.Flags().Changed("prune") {
 			return runRebasePrune(ctx, d, cfg, stepsCfg)
 		}
 
@@ -179,7 +180,11 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 			    applied_sql      = $2,
 			    applied_commit   = NULLIF($3, ''),
 			    size_bytes       = $4,
-			    state            = CASE WHEN state = 'pending' AND applied_at IS NOT NULL THEN 'applied' ELSE state END,
+			    state            = 'applied',
+			    applied_at       = COALESCE(applied_at, now()),
+			    applied_position = COALESCE(applied_position, position),
+			    folded_at        = NULL,
+			    folded_into      = NULL,
 			    state_changed_at = now(),
 			    updated_at       = now()
 			WHERE id = $5`, diskSha, content, commit, size, id); err != nil {
@@ -335,9 +340,22 @@ func runRebaseUndo(ctx context.Context, d *db.DB, cfg *config.Config, targets []
 	return nil
 }
 
+// inScope reports whether a ledger row belongs to the scope named on --prune.
+// The value all, which bare --prune resolves to, is every step. Otherwise it
+// names a step by its type, its slug, or its name, so --prune=migration,
+// --prune=claimius and --prune="Claimius Schema" all select the same way.
+func inScope(scope, stepType, slug, stepName string) bool {
+	s := strings.ToLower(strings.TrimSpace(scope))
+	if s == "" || s == "all" {
+		return true
+	}
+	return s == strings.ToLower(stepType) || s == strings.ToLower(slug) || s == strings.ToLower(stepName)
+}
+
 func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config) error {
 	host := hostOrLocalhost(cfg)
 	disk := map[string]bool{}
+	var targets []string
 	for _, st := range stepsCfg.Steps {
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
@@ -345,6 +363,9 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 		}
 		for _, f := range files {
 			disk[f.Rel] = true
+			if inScope(rebasePrune, st.Type, st.Slug, st.Name) {
+				targets = append(targets, f.Rel)
+			}
 		}
 	}
 
@@ -356,9 +377,10 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 		size    int
 	}
 	rows, err := d.Pool.Query(ctx, `
-		SELECT id, file_path, COALESCE(applied_sha256, sha256, ''), applied_sql, COALESCE(size_bytes, 0)
+		SELECT id, file_path, COALESCE(applied_sha256, sha256, ''), applied_sql, COALESCE(size_bytes, 0),
+		       step_type, COALESCE(slug, ''), step_name
 		FROM samna_migrate.file
-		WHERE state = 'applied' AND step_type = 'migration' AND removed_at IS NULL
+		WHERE state = 'applied' AND removed_at IS NULL
 		ORDER BY position`)
 	if err != nil {
 		return err
@@ -366,22 +388,23 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 	var orphans []orphan
 	for rows.Next() {
 		var o orphan
-		if err := rows.Scan(&o.id, &o.path, &o.sha, &o.content, &o.size); err != nil {
+		var stepType, slug, stepName string
+		if err := rows.Scan(&o.id, &o.path, &o.sha, &o.content, &o.size, &stepType, &slug, &stepName); err != nil {
 			rows.Close()
 			return err
 		}
-		if !disk[o.path] {
+		if !disk[o.path] && inScope(rebasePrune, stepType, slug, stepName) {
 			orphans = append(orphans, o)
 		}
 	}
 	rows.Close()
 
 	if len(orphans) == 0 {
-		log.Success("no orphaned migration entries to prune")
-		return nil
+		log.Success("no entries absent from the source tree to fold")
+		return runRebaseMirror(ctx, d, cfg, stepsCfg, targets)
 	}
 
-	log.Header(fmt.Sprintf("rebase --prune: fold %d orphaned migration entry(s) in %s", len(orphans), cfg.PGDatabase))
+	log.Header(fmt.Sprintf("rebase --prune: fold %d entry(s) absent from the source tree in %s", len(orphans), cfg.PGDatabase))
 	rightEdge := 0
 	paths := make([]string, len(orphans))
 	for i, o := range orphans {
@@ -406,7 +429,7 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 			WHERE id = $1`, o.id); err != nil {
 			return err
 		}
-		notes := fmt.Sprintf("folded orphaned migration absent from source tree reason=%s", rebaseReason)
+		notes := fmt.Sprintf("folded entry absent from source tree reason=%s", rebaseReason)
 		_, err := d.Pool.Exec(ctx, `
 			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
 			                                    applied_sql, action_type, tool_version, executed_by, host, database,
@@ -421,8 +444,8 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 	}
 
 	log.Plain("")
-	log.Success("folded %d orphaned entry(s)", pruned)
-	return nil
+	log.Success("folded %d entry(s)", pruned)
+	return runRebaseMirror(ctx, d, cfg, stepsCfg, targets)
 }
 
 func confirmPrune(cfg *config.Config, files []string) error {
@@ -500,6 +523,7 @@ func init() {
 	rebaseCmd.Flags().StringVar(&rebaseReason, "reason", "", "Why the files are being mirrored, recorded in history")
 	rebaseCmd.Flags().BoolVar(&rebaseUndo, "undo", false, "Restore the most recent rebase snapshot for each target file")
 	rebaseCmd.Flags().IntVar(&rebaseUndoID, "undo-id", 0, "Restore one specific rebase snapshot by history id")
-	rebaseCmd.Flags().BoolVar(&rebasePrune, "prune", false, "Fold applied migration entries absent from the source tree, clearing the boot blocker a history squash leaves")
+	rebaseCmd.Flags().StringVar(&rebasePrune, "prune", "", "Fold entries absent from the source tree and mirror the rest, scoped to a step by type, slug or name; bare --prune means all")
+	rebaseCmd.Flags().Lookup("prune").NoOptDefVal = "all"
 	rootCmd.AddCommand(rebaseCmd)
 }

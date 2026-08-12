@@ -23,7 +23,7 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | `up` | yes | Apply pending migrations. The deploy path. |
 | `reconcile` | no | Diff the local tree against a live server in depth. |
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
-| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. |
+| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune` makes it describe the current file structure, scoped per step. |
 | `skill` | no | Print the claude skill, or install it under `~/.claude/skills/smig`. |
 | `down` | yes | AI assisted revert of applied migrations. Refuses in CI. |
 | `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |

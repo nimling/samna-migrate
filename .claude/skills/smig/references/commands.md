@@ -80,7 +80,9 @@ Mirrors on disk content into `samna_migrate` as deployed truth, reversibly. No a
 
 A path with no ledger row is registered rather than skipped, which is what makes a scoped `rebase` the correct pairing for a file rename.
 
-`--prune` is the other direction. It folds every applied migration row whose file is absent from the tree, setting `state = 'folded'` and writing a `fold` history row. That is the state a history squash leaves, where `up` aborts with `applied but absent from the source tree`. Prune clears exactly those rows and leaves pending files untouched. Run `reconcile --db` first to confirm the tree still produces the folded migrations' objects. Mirror would stamp pending files as applied without running their SQL, so prune is the right tool for orphaned entries.
+`--prune` makes the ledger describe the current file structure. Every applied entry whose file is absent from the tree is folded, with a `fold` history row, and every file on disk is recorded as applied at its own content. Bare `--prune` covers every step and is the same as `--prune=all`. A value scopes it to one step by type, slug or name, so `--prune=migration` folds the entries a history squash leaves, which is where `up` aborts with `applied but absent from the source tree`, and `--prune=debug_user` narrows to that seed step.
+
+Use it after folding migrations into a base file, or after renaming files, where the same SQL is deployed but the tree expresses it under different paths. Confirming the prompt is the statement that the local tree is the deployed truth, so no SQL is executed and nothing is re seeded.
 
 ## down
 
