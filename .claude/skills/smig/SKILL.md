@@ -1,205 +1,88 @@
 ---
 name: smig
-description: Drives the smig database migration CLI. Explains every command, the apply pipeline, the reconcile report, and the safety rules that bound writes against a live database. Use when running migrations, checking migration state, diagnosing schema drift, running a single step or file, seeding, dumping or inserting table data, destroying and rebuilding a database, or invoking any smig command.
+description: Drives the smig database migration CLI. Use when running migrations, checking migration state, diagnosing schema drift, applying a single step or file, seeding, dumping or inserting table data, destroying and rebuilding a database, authoring a migration filename, or invoking any smig command.
 ---
 
 # smig
 
-`smig` is the database migration runner for the Samna stack. It walks a `migrate.yml` step file, applies SQL files in order, records every attempt in the `samna_migrate` schema, and gates CI behind an operator acknowledged local upgrade. This skill tells an agent which command to run for a given intent and which commands write to a live database.
+`smig` walks a `migrate.yml` step file, applies SQL files in order, records every attempt in the `samna_migrate` schema, and gates CI behind an operator acknowledged local upgrade.
 
-Read this before running any `smig` command on behalf of a user. When the intent is unclear, ask which database and which environment, never guess.
+Read this before running any `smig` command on behalf of a user. When the intent is unclear, ask which database and which environment. Never guess.
 
-## The mental model
+## Two callers, different rights
 
-There are two callers and they have different rights.
+1. The local operator runs `upgrade`, `down`, `rebase`, `merge`, `destroy`. These touch ledger state or the tree itself. `down` refuses to run in CI.
 
-1. The local operator runs `smig upgrade` and `smig down`. These touch the `samna_migrate` schema chain and revert state. They refuse to run in CI.
+2. CI runs `up`. Before applying, `boot_check` demands the database match the working tree on `schema_version`, `tool_version`, and the `yaml_sha256` of `migrate.yml`. If anything is behind, `up` refuses and asks for a local `upgrade`. Never bypass that by writing `samna_migrate.state` directly.
 
-2. CI or any automated caller runs `smig up`. Before applying, a strict `boot_check` demands the database is exactly aligned with the working tree on `schema_version`, `tool_version`, and the `yaml_sha256` of `migrate.yml`. If anything is behind, `up` refuses and tells the operator to run `smig upgrade` locally. The agent never bypasses this by editing schema state directly.
+Every successful apply stores the raw `.sql` body and its sha256 in `samna_migrate.file` and `samna_migrate.history`, so the deployed bytes are always available to diff against the tree.
 
-Every successful apply stores the raw `.sql` body and its sha256 into `samna_migrate.file` and `samna_migrate.history`, so the deployed bytes are always available to diff against the working tree.
+## Pick a command by intent
 
-## Connection and global flags
+1. Learn where a database stands: `stat`. Read only.
 
-`smig` reads the target database from the standard libpq environment: `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`. Load a dotenv with `--env=<file>` when the deploy env lives in a file. Run `reconcile --db`, `up`, and `merge` with the same env the real deploy uses, because files apply with their step `pre` and `vars` expanded from the environment.
+2. Ask whether `up` would apply cleanly: `check`. It writes discovery rows, see the note below.
 
-Every long value flag takes its value with an equals sign: `--env=.env.prd`, never `--env .env.prd`. The spaced form is rejected before dispatch at `internal/migrate/root.go:78`.
+3. Validate filenames and SQL shape with no database: `lint`.
 
-Two ways the env you pass is silently ignored:
+4. Acknowledge a new tool version or an edited `migrate.yml`: `upgrade`.
 
-1. A consumer repo justfile with `set dotenv-load` injects that repo's `.env` into the recipe environment first. `smig` fills only the libpq keys that are unset or empty at `internal/config/config.go:76`, so `--env=.env.prd` passed through a `just migrate` recipe is a no op and the run targets local. To hit a non default environment, call the `smig` binary directly with `--schema` and `--db-dir`, not the justfile recipe:
+5. Deploy: `up`. One step or one file only: `run`.
 
-```
-smig reconcile --db --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
-```
+6. Understand divergence between the tree and a live server, or author corrective SQL: `reconcile`.
 
-2. A libpq variable already exported in your shell wins over the dotenv for the same reason. Clear `PGHOST` and friends, or run in a clean shell, when the dotenv must take effect.
+7. Align the ledger to disk without executing SQL: `rebase`. Clear orphaned applied migrations after a squash: `rebase --prune`.
 
-Persistent flags available on every command:
+8. Pull live SQL back into the tree: `merge`.
 
-1. `--schema` path to `migrate.yml`, default `./database/migrate.yml`, env `MIGRATE_SCHEMA`.
+9. Revert applied migrations: `down`. Local only, AI powered, always dry run first.
 
-2. `--db-dir` path to the database directory, default `./database`, env `DB_DIR`.
+10. Move table data: `dump` reads, `insert` writes.
 
-3. `--env` optional dotenv file to load first.
+11. Tear the tree's objects out of a server: `destroy`. Dry run first, always.
 
-4. `-y` / `--yes` bypass interactive confirmation prompts.
+Full per command detail, every flag, and the target grammar are in `references/commands.md`.
 
-5. `--force` bypass safety checks where a command supports it.
+## check is not read only
 
-6. `-s` / `--silent` errors only. `-v` verbose adds detail and diff hunks. `-vv` dumps every SQL statement and full bodies.
+`check` runs `preflight.Scan`, which inserts a ledger row for every file it has not seen and flips a drifted applied base or seed file to `pending`. Against a shared server that changes what the next `up` will apply. Run it against a local or throwaway database, or accept the ledger write deliberately.
 
-7. `--anthropic-key` or env `ANTHROPIC_API_KEY`, and `--model`, both only for the AI powered `down` command.
+## Authoring
 
-## Commands by intent
+Step types, the `V<version>__<slug>_<name>.sql` filename grammar, and how an include entry resolves from a folder, a git repo, or a url are in `references/authoring.md`.
 
-### smig stat
+The identity of a file in the ledger is its path relative to the database directory. Renaming a file makes it a new file to every server, so pair any rename with a scoped `rebase` before the next `up`.
 
-Read only. Prints `samna_migrate.state` and recent history with per step file counts. Reach for it first to learn where a database stands before deciding any action. Safe to run anywhere.
+## Reconcile
 
-### smig check
+The four sections, the JSON field contract, and how to turn that JSON into corrective SQL are in `references/reconcile.md`.
 
-Read only preflight. Runs `boot_check` then scans disk against the ledger and reports new, unchanged, drift, and missing counts. No writes. Use it to answer whether `up` would apply cleanly without applying. Drift or missing files surface here as warnings. This is the sha tamper check: a migration whose disk bytes differ from `samna_migrate.file.sha256` is fatal.
+## Connection
 
-### smig lint
+`smig` reads `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`. Load a dotenv with `--env=<file>`.
 
-Static checks on every step file, no database needed. Reports filename grammar violations, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero. `--strict` promotes warnings to errors. Every check runs every time. Run it before proposing any SQL change and in PR CI.
+Every long value flag takes its value with an equals sign. `--env=.env.prd`, never `--env .env.prd`. The spaced form is rejected at `internal/migrate/root.go:78`.
 
-Each step in `migrate.yml` declares a `type`, required and one of `base` for baseline DDL, `migration` for schema migrations, or `seed` for non DDL seeded data. A `base` or `seed` step declares a `slug` naming the area it deploys to. A `migration` step declares no slug, because its files each target an area owned by another step. `Load` rejects a missing or invalid type, a slug on a migration step, and a missing slug on a base or seed step.
+Two ways a passed env is silently ignored:
 
-The filename grammar is `V<version>__<slug>_<name>.sql`: a `V` prefix, a dot separated integer version whose leading component is at least 1, the `__` separator, a lowercase alphanumeric slug, an underscore, and a `<name>` of lowercase alphanumerics and underscores. The slug and the name are both required and the version never starts at 0. The `<slug>` must be one of the slugs declared by the steps in `migrate.yml`; `lint` flags any file whose slug names no declared area. So with steps declaring the slugs `claimius` and `base`, `V1.0__claimius_roles.sql` is valid, while `V1.0__roles.sql`, `V0.0__claimius_roles.sql`, and `V1.0__widget_roles.sql` are all rejected. `ParseFilename` and `Config.Slugs` in `internal/steps/steps.go` carry the grammar.
+1. A consumer justfile with `set dotenv-load` injects that repo's `.env` first, and `smig` fills only the libpq keys that are unset or empty at `internal/config/config.go:76`. So `--env=.env.prd` through a `just migrate` recipe is a no op and the run targets local. Call the binary directly with `--schema` and `--db-dir` instead.
 
-An include entry resolves from a local folder, a git repo, or a url. The local form is `path` with an optional `fallback`. The git form is `git` for the repo, `branch` for the branch to track, `ref` for a tag or commit to pin, `token` for https auth, `key` for ssh auth, and `path` for the subfolder inside that repo; smig shallow clones the ref in process with go-git and reads only that subfolder, so no `git` binary is required. `ref` wins when set, otherwise `branch` is used, and `branch` itself defaults to `main`, so an entry with only `git` and `path` tracks the latest `main`. For https a private repo uses `token`, or `GITHUB_TOKEN` from the environment when `token` is unset. For ssh, `key`, or `SMIG_SSH_KEY` from the environment, is a key file path or inline key material with an optional `SMIG_SSH_KEY_PASSWORD`; with no key set smig prefers a default `~/.ssh` key file and falls back to the ssh agent. The url form is `url` to an archive with `path` as the subfolder inside it. Every remote field is environment expanded, so `ref: $MIDDLEWARE_VERSION` reads from the env loaded for the run. A local include that is missing is skipped; a git or url include that fails to resolve is a hard error. Resolution is in `internal/steps/steps.go`. Example pulling a prophet claimius set straight from the middleware:
+2. A libpq variable already exported in the shell wins for the same reason.
 
-```yaml
-include:
-  - git: git@github.com:nimling/samna-auth-middleware.git
-    ref: v1.1.0-alpha0007
-    path: prophet/database
-```
+Persistent flags: `--schema`, `--db-dir`, `--env`, `-y` or `--yes`, `--force`, `-s` or `--silent`, `-v`, `-vv`, plus `--anthropic-key` and `--model` for `down`.
 
-### smig upgrade
+## Hard rules
 
-Local operator only. Walks the `samna_migrate` schema chain to the tool `SchemaVersion`, then writes `yaml_sha256` and `tool_version` into `samna_migrate.state`. This is the acknowledgement step that lets a later `up` pass `boot_check`. Run it after pulling a new `smig` version or editing `migrate.yml`. Prompts for the database name.
+1. Never bypass `boot_check`. When `up` refuses, run `upgrade` locally.
 
-### smig up
+2. Never run `down`, `merge --apply`, or `merge --revert` without showing the user what will change first.
 
-Apply pending migrations. Runs `boot_check`, then preflight, then applies every pending file in order, recording sha, body, and deployed commit. Pending files order by step order and version, not discovery position. This is the deploy path. A drifted base or seed file is treated as a replay and reapplied; a drifted applied migration is fatal; an applied migration missing from disk is fatal. Run with the deploy env.
+3. Never apply a reconcile remediation marked `destructive` or `review` without explicit confirmation.
 
-`up [target]` stops after the named file instead of applying everything. `-i` / `--interactive` presents the grouped pending list and lets the operator pick the stop point. The target grammar is shared with `run`: a 1 based number from the list, a `slug:version` pair like `claimius:2.4`, a file name, a file path, or a step slug.
+4. Never run `destroy` without `--dry-run` first and explicit confirmation, and never when the dry run reports build errors.
 
-### smig run
+5. Run write commands with the same env as the real deploy. A wrong `PGDATABASE` writes to the wrong server.
 
-Run exactly one step or SQL file from the tree, recording the apply in the ledger like `up` does. Takes the same target grammar as `up`: number, `slug:version`, file name, file path, or step slug, where a step slug runs every pending file of that step. `-i` / `--interactive` presents the grouped list for picking. A path that resolves to a SQL file outside the tree is refused unless `--force`, which executes it as an external file recorded with an `external` marker. Use `run` to reapply a single seed or push one file ahead of a full `up`; use `--force` external runs only for one off corrective SQL the user has reviewed.
+6. Prefer `stat` before any write, and remember `check` itself writes.
 
-### smig reconcile
-
-Compare the local database folder against the live server in depth and render the drift as a git style diff. This is the command an agent uses to understand divergence and to build hand applied SQL. Four sections, each selectable, all four run when none is named:
-
-1. `--files` each local `.sql` against the body stored at apply time, classified added, dropped, changed, or reordered.
-
-2. `--objects` every created object tracked globally for moves, renames, signature, content, and position changes.
-
-3. `--git` the real `git diff` of each changed, dropped, or reordered file since the commit it was deployed from, when the folder is a git repo.
-
-4. `--db` builds every local file into a fresh docker postgres and diffs the produced objects against the live server across functions, tables and columns, constraints, indexes, triggers, views, types, sequences, grants, and comments. Needs docker.
-
-`--json` is the output format, orthogonal to the sections. Bare `--json` emits the joint; `--db --json` emits only the database comparison. `--keep` leaves the container and candidate tree for inspection. `--image` overrides the postgres image, which otherwise follows the live server major version. `--stop-one-error` stops the file audit at the first difference.
-
-#### Using the reconcile JSON to write SQL
-
-Each object in the JSON carries the fields needed to author corrective SQL:
-
-1. `remediation` is the direction: `create`, `drop`, `update`, `review`, or `none`.
-
-2. `phase` is the apply order: extension, schema, type, table, sequence, function, view, index, constraint, trigger, policy, grant, comment. Emit statements in ascending phase.
-
-3. `destructive` flags a drop or a dropped column. Surface these to the user before applying.
-
-4. `desired_sql` is what the target should hold, `current_live_ddl` is what it holds now. Tables also carry `columns[]` with per column `add`, `alter`, or `drop` and the `live` and `built` definitions.
-
-Fidelity of `desired_sql` and `current_live_ddl` varies by kind, because they come from postgres introspection:
-
-1. Function, index, trigger come out as complete runnable statements. Use them directly.
-
-2. Constraint is the body only. Wrap it in `ALTER TABLE ... ADD CONSTRAINT`.
-
-3. Table is a column list, not a `CREATE TABLE`. Build the `ALTER TABLE` from `columns[]`.
-
-4. View is the query only. Wrap it in `CREATE OR REPLACE VIEW`.
-
-5. Sequence, enum, grant, comment are summary strings. Reconstruct the statement from the fields. The identity and the remediation direction carry everything needed:
-
-5.1. Grant. `signature` is `function <schema>.<fn>(<args>) <grantee>` and `desired_sql` is the privilege, for example `EXECUTE`. `create`: `GRANT <privilege> ON FUNCTION <schema>.<fn>(<args>) TO <grantee>`. `drop` or `review`: `REVOKE <privilege> ON FUNCTION <schema>.<fn>(<args>) FROM <grantee>`. The grantee is the trailing token of the identity, `public` maps to `PUBLIC`.
-
-5.2. Comment. `signature` is `function <schema>.<fn>(<args>)` and `desired_sql` is the comment text. `create`: `COMMENT ON FUNCTION <schema>.<fn>(<args>) IS '<text>'`. `drop` or `review`: `COMMENT ON FUNCTION <schema>.<fn>(<args>) IS NULL`.
-
-5.3. Sequence and enum summaries carry data_type, start, increment, or the label list. They omit min, max, cache, ownership, storage, and collation. When a diff lands on one of those attributes, introspect that single object for the missing detail before authoring the `ALTER`.
-
-When the docker build is incomplete, only in live verdicts are downgraded from `drop` to `review`. Never drop on a partial build. Resolve `build_errors` and re-run first. Extension owned objects via `pg_depend` are recognised and never reported as drop on live.
-
-#### Worked example: reconcile a tree against prd
-
-```
-smig reconcile --db --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
-```
-
-Read the header line `deployed N of M files into the container, K build errors` first. When K is nonzero the only in live list is suspect, because a file that failed to build never produced its objects, so they surface as `only in live` without being live only drift. Then read the three buckets: `produced, not in live` means the tree is ahead of live, `only in live` means live has objects the tree does not build or the build failed, `definition differs` means the materialised DDL drifted. Add `--json` to lift the fields above and synthesise the corrective SQL.
-
-### smig merge
-
-Rebase live SQL into a staging tree and optionally promote it. Three modes:
-
-1. `merge` writes the live SQL of every base and seed file into `.upgraded/`, then routes migration files into base targets when identifiers match. Source tree and database untouched.
-
-2. `merge --apply` snapshots the source tree to `.migrate-<ts>-<sha>/`, moves `.upgraded/` into the source tree, and reconciles `samna_migrate.file` rows. Requires the proof written by `smig reconcile` unless `--force`. `--tag` writes a git annotated tag during apply.
-
-3. `merge --revert [n]` restores a prior `.migrate-<n>/` snapshot, defaulting to the most recent. Refuses unless the last merge action was an apply, unless `--force`.
-
-### smig rebase
-
-Mirror the on disk file content into `samna_migrate` as the deployed truth, reversibly. With no arguments it mirrors the whole tree; with file paths it mirrors only those. Each mirror snapshots the prior body into a history row with `action_type = 'rebase'` first, so `--undo` restores the most recent snapshot and `--undo-id <history_id>` restores one specific snapshot. Use it to align the ledger to disk without reapplying SQL, for example after fixing a body that already matches live. `--reason` records why. Prompts for the database name.
-
-`--prune` is the other direction of aligning the ledger to disk. It folds every applied migration row whose file is absent from the source tree, setting `state = 'folded'` and writing a `fold` history row per entry. This is the state a history squash leaves: migration files were folded into the baseline and deleted from the tree, but the live ledger still carries them as applied, so `up` aborts with `applied but absent from the source tree`. `rebase --prune` clears exactly those rows and leaves pending files untouched, so a following `up` applies the genuinely new migrations. Run `reconcile --db` first to confirm the tree still produces the folded migrations' objects against live; the only-in-live bucket must hold nothing beyond what the squash intentionally dropped. Mirror, by contrast, would stamp pending files as applied without running their SQL, so prune is the correct tool for orphaned entries.
-
-### smig down
-
-Local operator only, AI powered, refuses in CI. Walks applied migration rows in descending order and reverts each. For each step it reuses a cached `down_proposal` if present, otherwise calls the Anthropic Messages API to synthesise the down SQL from the forward SQL and the current database state, validates it inside a rollback transaction, executes it, and writes a `down` history row pointing back at the original apply. Requires `--anthropic-key` or `ANTHROPIC_API_KEY`. `--to <file_path|history_id>` reverts until a target, `--steps N` reverts the N most recent, `--dry-run` prints the proposed down SQL without executing. Always dry run first and show the user the proposed SQL before executing.
-
-### smig dump
-
-Read from a live database, write json to disk. Writes the rows of each selected table to `<schema>.<table>.json` in the output directory, limited to the base tables in the schemas declared by `migrate.yml`. `--all` selects every such table, `--table=<schema.table>` repeatable and comma joined selects a subset, `--out=<dir>` sets the destination and defaults to the current directory. With no selection flag and a terminal, an arrow key list lets the operator pick tables with space, `a` toggles all, enter confirms, then it asks for the output path. Rows encode through `jsonb_agg(to_jsonb(...))` so postgres owns the type fidelity of uuid, numeric, jsonb, and timestamptz. Safe to run anywhere, it only reads.
-
-### smig insert
-
-Load json produced by dump back into its tables. Point it at a folder, which loads every `.json` inside, or at individual files, from positional arguments and repeated `--path` flags; with none the current directory is used. The target table comes from each file name, and rows load through `jsonb_populate_recordset` so columns are typed from the table, generated columns excluded, one transaction per file. `--no-triggers` disables user triggers on the table for the load and re enables them after. This writes rows to the target database, so run it with the intended env and confirm `PGDATABASE` before loading a large dump.
-
-### smig destroy
-
-Destructive teardown, needs docker. Builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files create, and drops that set from the live server: declared schemas other than `public` with schema level cascade drops, objects in `public` individually with `DROP ... IF EXISTS CASCADE`, all in one transaction. Objects owned by an extension, such as the functions pgcrypto installs, are excluded so the individual drops do not fail. The `samna_migrate` ledger is always dropped so a following `up` re applies from scratch. `--extensions` also drops the extensions the tree creates, never `plpgsql`. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. `--image` overrides the candidate postgres image, needed when the tree requires extensions the plain image lacks, for example `--image=pgvector/pgvector:pg17` for a tree creating the vector extension; without it the candidate build fails and the plan misses every downstream object. The plan is printed and the database name is required to confirm. `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Never run it without `--dry-run` first and showing the user the plan, and never execute a destroy whose dry run reports build errors.
-
-## Standard workflow
-
-1. `smig upgrade` against the target env, locally, to acknowledge the schema and yaml.
-
-2. `smig lint` in pre commit and PR CI.
-
-3. `smig up` from CI. `boot_check` enforces equality on schema_version, tool_version, and yaml_sha256 and refuses if anything is behind.
-
-4. `smig reconcile` whenever live and the tree may have diverged, or to produce SQL that makes two servers match.
-
-## Hard rules for the agent
-
-1. Never bypass `boot_check`. If `up` refuses, the fix is `smig upgrade` locally, not a direct write to `samna_migrate.state`.
-
-2. Never run `down`, `merge --apply`, or `merge --revert` without showing the user what will change first. `down` and `merge --revert` are reversal paths; `merge --apply` rewrites the source tree.
-
-3. Never apply reconcile remediation marked `destructive` or `review` without explicit user confirmation.
-
-4. Run write commands with the same env as the real deploy. A wrong `PGDATABASE` writes to the wrong server.
-
-5. Prefer `stat` and `check` to understand state before any write.
-
-6. Never run `destroy` without `--dry-run` first and explicit user confirmation. It drops every object the tree creates and resets the ledger; the only way back is re running `up`.
-
-7. `insert` writes rows and `dump` only reads. Confirm `PGDATABASE` before `insert`, the same as any write path.
+7. `insert` writes rows. Confirm `PGDATABASE` first, the same as any write path.

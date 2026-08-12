@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var completionAuto bool
+var (
+	completionAuto  bool
+	completionSkill bool
+)
 
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
@@ -26,9 +29,12 @@ it inside a managed block. Rerunning --auto refreshes the smig owned file and
 leaves the rc untouched, so an upgrade reinstalls completion in one step. fish
 loads from its own completions directory and needs no rc change.
 
-  smig completion zsh           print the zsh script
-  smig completion --auto        detect the shell and install
-  smig completion bash --auto   install for a named shell`,
+--skill installs the claude skill in the same step, globally under ~/.claude/skills.
+
+  smig completion zsh             print the zsh script
+  smig completion --auto          detect the shell and install
+  smig completion --auto --skill  install completion and the claude skill
+  smig completion bash --auto     install for a named shell`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		shell := ""
@@ -36,7 +42,16 @@ loads from its own completions directory and needs no rc change.
 			shell = args[0]
 		}
 		if completionAuto {
-			return installCompletion(cmd.Root(), shell)
+			if err := installCompletion(cmd.Root(), shell); err != nil {
+				return err
+			}
+			if completionSkill {
+				return installSkill(true)
+			}
+			return nil
+		}
+		if completionSkill {
+			return fmt.Errorf("--skill installs alongside --auto")
 		}
 		if shell == "" {
 			return fmt.Errorf("name a shell (bash, zsh, fish, powershell) or pass --auto")
@@ -165,5 +180,6 @@ func ensureManagedBlock(path, body string) error {
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	completionCmd.Flags().BoolVar(&completionAuto, "auto", false, "Detect the shell and install completion into the rc file")
+	completionCmd.Flags().BoolVar(&completionSkill, "skill", false, "Install the claude skill alongside completion")
 	rootCmd.AddCommand(completionCmd)
 }
