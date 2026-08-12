@@ -17,13 +17,14 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | Command | Writes live | Use |
 |---|---|---|
 | `stat` | no | Print `samna_migrate.state` and recent history. |
-| `check` | no | Preflight. Report new, drift, and missing counts without applying. |
+| `check` | ledger only | Preflight. Report new, drift, and missing counts without applying SQL. Registers unseen files and requeues drifted ones. |
 | `lint` | no | Static checks on every step file. |
 | `upgrade` | state only | Acknowledge schema and yaml locally so a later `up` passes the boot check. |
 | `up` | yes | Apply pending migrations. The deploy path. |
 | `reconcile` | no | Diff the local tree against a live server in depth. |
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
 | `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. |
+| `skill` | no | Print the claude skill, or install it under `~/.claude/skills/smig`. |
 | `down` | yes | AI assisted revert of applied migrations. Refuses in CI. |
 | `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |
 | `insert` | yes | Insert rows from `<schema>.<table>.json` files back into their tables. |
