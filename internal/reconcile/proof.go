@@ -325,6 +325,9 @@ func SchemaUnion(stepsCfg *steps.Config) []string {
 	seen := map[string]bool{}
 	out := []string{}
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		for _, s := range st.Schemas {
 			if s == "samna_migrate" || seen[s] {
 				continue

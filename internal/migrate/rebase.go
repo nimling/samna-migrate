@@ -97,6 +97,9 @@ func rebaseTargets(args []string, stepsCfg *steps.Config) ([]string, error) {
 	}
 	var rels []string
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err
@@ -354,9 +357,14 @@ func inScope(scope, stepType, slug, stepName string) bool {
 
 func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg *steps.Config) error {
 	host := hostOrLocalhost(cfg)
+	inactive := map[string]bool{}
 	disk := map[string]bool{}
 	var targets []string
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			inactive[st.Name] = true
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return err
@@ -393,7 +401,7 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 			rows.Close()
 			return err
 		}
-		if !disk[o.path] && inScope(rebasePrune, stepType, slug, stepName) {
+		if !disk[o.path] && !inactive[stepName] && inScope(rebasePrune, stepType, slug, stepName) {
 			orphans = append(orphans, o)
 		}
 	}

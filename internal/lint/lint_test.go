@@ -117,3 +117,19 @@ func TestLintMultiWordSlug(t *testing.T) {
 		t.Errorf("other_seed must be flagged as an undeclared slug: %+v", r.Findings)
 	}
 }
+
+func TestLintSkipsInactiveStep(t *testing.T) {
+	dbDir := t.TempDir()
+	writeStep(t, dbDir, "base", "V1.0__base_tables.sql", "CREATE TABLE IF NOT EXISTS public.t (id INT);")
+	cfg := &steps.Config{Steps: []steps.Step{
+		{Name: "Private", Type: "base", Slug: "private", If: "false", Include: []steps.IncludeEntry{{Git: "https://invalid.invalid/none.git", Ref: "v0", Path: "database"}}},
+		{Name: "Base", Type: "base", Slug: "base", Include: []steps.IncludeEntry{{Path: "base/"}}},
+	}}
+	r, err := Run(cfg, dbDir)
+	if err != nil {
+		t.Fatalf("an inactive step was resolved: %v", err)
+	}
+	if len(findingFor(r, "base/V1.0__base_tables.sql")) != 0 {
+		t.Fatalf("unexpected findings %+v", r.Findings)
+	}
+}

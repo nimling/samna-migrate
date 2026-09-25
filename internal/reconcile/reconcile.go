@@ -87,6 +87,9 @@ func loadLocal(stepsCfg *steps.Config, dbDir string) (map[string]LocalFile, erro
 	out := map[string]LocalFile{}
 	pos := 0
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err

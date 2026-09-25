@@ -46,6 +46,9 @@ func Run(stepsCfg *steps.Config, dbDir string) (*Result, error) {
 
 	validSlugs := stepsCfg.Slugs()
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err

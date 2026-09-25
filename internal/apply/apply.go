@@ -210,6 +210,9 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 
 func FileRel(stepsCfg *steps.Config, fp string, dbDir string) (*steps.Step, error) {
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err

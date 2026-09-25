@@ -22,6 +22,9 @@ func objIndexKey(kind, name, table string) string {
 func collectLocalObjects(stepsCfg *steps.Config, dbDir string) (map[string]LiveDiff, error) {
 	out := map[string]LiveDiff{}
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			return nil, err

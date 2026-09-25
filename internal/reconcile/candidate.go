@@ -19,6 +19,9 @@ func materializeCandidate(stepsCfg *steps.Config, stepsFile, dbDir, upgradedDir 
 		return "", "", err
 	}
 	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
 		files, err := st.ResolveFiles(dbDir)
 		if err != nil {
 			os.RemoveAll(candidateDir)
