@@ -90,6 +90,35 @@ func (db *DB) RunFile(ctx context.Context, path string, preSQL string, vars map[
 	return tx.Commit(ctx)
 }
 
+func (db *DB) Batch(ctx context.Context, body string, each func(line string)) error {
+	conn, err := db.Pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	pg := conn.Conn().PgConn()
+	mrr := pg.Exec(ctx, body)
+	var batchErr error
+	for mrr.NextResult() {
+		rr := mrr.ResultReader()
+		for rr.NextRow() {
+			for _, v := range rr.Values() {
+				each(string(v))
+			}
+		}
+		if _, err := rr.Close(); err != nil && batchErr == nil {
+			batchErr = err
+		}
+	}
+	if err := mrr.Close(); err != nil && batchErr == nil {
+		batchErr = err
+	}
+	if pg.TxStatus() != 'I' {
+		pg.Exec(ctx, "ROLLBACK").Close()
+	}
+	return batchErr
+}
+
 func substituteVars(body string, vars map[string]string) string {
 	for k, v := range vars {
 		literal := "'" + strings.ReplaceAll(v, "'", "''") + "'"

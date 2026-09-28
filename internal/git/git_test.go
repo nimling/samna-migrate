@@ -59,3 +59,49 @@ func TestIsRepoAndFileCommit(t *testing.T) {
 		t.Fatalf("DiffSince returned empty for a changed file")
 	}
 }
+
+func TestRootAndArchive(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	dir := t.TempDir()
+	run(t, dir, "init", "-q")
+	run(t, dir, "config", "user.email", "t@t")
+	run(t, dir, "config", "user.name", "t")
+	if err := os.MkdirAll(filepath.Join(dir, "database", "base"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "database", "base", "V1.0__app_a.sql"), []byte("SELECT 1;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "other.txt"), []byte("x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	run(t, dir, "add", ".")
+	run(t, dir, "commit", "-q", "-m", "add a")
+	if err := os.WriteFile(filepath.Join(dir, "database", "base", "V1.0__app_a.sql"), []byte("SELECT 2;\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	root := Root(filepath.Join(dir, "database"))
+	if want, _ := filepath.EvalSymlinks(dir); root != want {
+		t.Fatalf("Root returned %q, want %q", root, want)
+	}
+	dst := t.TempDir()
+	if err := Archive(dir, "HEAD", "database", dst); err != nil {
+		t.Fatalf("Archive: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dst, "database", "base", "V1.0__app_a.sql"))
+	if err != nil {
+		t.Fatalf("archived file missing: %v", err)
+	}
+	if string(got) != "SELECT 1;\n" {
+		t.Fatalf("archived body = %q, want the committed body", got)
+	}
+	if _, err := os.Stat(filepath.Join(dst, "other.txt")); err == nil {
+		t.Fatalf("archive included a path outside the requested subfolder")
+	}
+	if err := Archive(dir, "no-such-ref", "database", t.TempDir()); err == nil {
+		t.Fatalf("Archive of a missing ref did not fail")
+	}
+}

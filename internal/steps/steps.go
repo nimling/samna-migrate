@@ -59,10 +59,11 @@ type Step struct {
 }
 
 type Config struct {
-	Name        string `yaml:"name"`
-	Description string `yaml:"description"`
-	Version     string `yaml:"version"`
-	Steps       []Step `yaml:"steps"`
+	Name        string   `yaml:"name"`
+	Description string   `yaml:"description"`
+	Version     string   `yaml:"version"`
+	Steps       []Step   `yaml:"steps"`
+	Tests       []string `yaml:"tests"`
 }
 
 var validTypes = map[string]bool{"base": true, "migration": true, "seed": true}
@@ -499,6 +500,63 @@ func (s *Step) ResolveFiles(dbDir string) ([]File, error) {
 		return files[i].Name < files[j].Name
 	})
 	return files, nil
+}
+
+func (c *Config) TestDirs(dbDir string) []string {
+	out := make([]string, 0, len(c.Tests))
+	for _, t := range c.Tests {
+		out = append(out, resolveIncludePath(dbDir, t))
+	}
+	return out
+}
+
+func (c *Config) TestFiles(dbDir, target string) ([]string, error) {
+	folder, stem := "", strings.TrimSpace(target)
+	if i := strings.LastIndex(stem, "/"); i >= 0 {
+		folder, stem = stem[:i], stem[i+1:]
+	}
+	stem = strings.TrimSuffix(stem, ".sql")
+	files := []string{}
+	for _, dir := range c.TestDirs(dbDir) {
+		err := filepath.WalkDir(dir, func(p string, d os.DirEntry, werr error) error {
+			if werr != nil {
+				return werr
+			}
+			if d.IsDir() || !strings.HasSuffix(d.Name(), ".sql") {
+				return nil
+			}
+			files = append(files, p)
+			return nil
+		})
+		if err != nil {
+			return nil, fmt.Errorf("tests %s: %w", dir, err)
+		}
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return relOrName(dbDir, files[i]) < relOrName(dbDir, files[j])
+	})
+	if stem == "" && folder == "" {
+		return files, nil
+	}
+	kept := files[:0]
+	for _, p := range files {
+		dir := filepath.ToSlash(filepath.Dir(relOrName(dbDir, p)))
+		name := strings.TrimSuffix(filepath.Base(p), ".sql")
+		match := inFolder(dir, target)
+		if folder == "" {
+			match = match || name == stem
+		} else {
+			match = match || (inFolder(dir, folder) && name == stem)
+		}
+		if match {
+			kept = append(kept, p)
+		}
+	}
+	return kept, nil
+}
+
+func inFolder(dir, folder string) bool {
+	return strings.Contains("/"+dir+"/", "/"+strings.Trim(folder, "/")+"/")
 }
 
 // CompareVersion orders dotted numeric versions component by component, so

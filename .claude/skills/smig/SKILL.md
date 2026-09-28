@@ -41,6 +41,8 @@ Every successful apply stores the raw `.sql` body and its sha256 in `samna_migra
 
 11. Tear the tree's objects out of a server: `destroy`. Dry run first, always.
 
+12. Prove the tree with pgTAP against a throwaway database, fresh and upgraded from a ref: `test`. Scaffold a test file: `test new`. Needs docker, touches no server.
+
 Full per command detail, every flag, and the target grammar are in `references/commands.md`.
 
 ## check is not read only

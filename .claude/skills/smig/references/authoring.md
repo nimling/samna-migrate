@@ -84,3 +84,25 @@ include:
 4. In migration files, `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` use their idempotent forms.
 
 5. A base or seed file is replayed whenever its sha drifts, so it must be safe to run more than once.
+
+## Tests
+
+A top level `tests:` key lists the folders `smig test` walks, each relative to the database directory like an include path, recursively, keeping every `.sql` file. `lint` ignores the key.
+
+```yaml
+tests:
+  - tests
+```
+
+Every file is one pgTAP batch run on a throwaway database built from the tree and rolled back afterwards:
+
+```sql
+BEGIN;
+SELECT plan(2);
+SELECT has_table('public', 'widget', 'widget table exists');
+SELECT is(public.widget_total(), 7::bigint, 'widget_total sums qty');
+SELECT * FROM finish();
+ROLLBACK;
+```
+
+The plan counts the assertions, `finish()` reports the ones missing, and the `ROLLBACK` keeps one file from leaking rows into the next. A subfolder groups files into a section and is what `test <folder>` selects. `smig test new <name>` writes this shape, and `--rows="<sql>"` turns a query's observed rows into a `results_eq` assertion.

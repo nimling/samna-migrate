@@ -4,7 +4,7 @@ Every command in the binary, what it reads, what it writes, and its flags. Load 
 
 ## Write profile at a glance
 
-1. Reads only: `stat`, `lint`, `reconcile`, `dump`.
+1. Reads only: `stat`, `lint`, `reconcile`, `dump`, `test`. `test` touches only its own docker container.
 
 2. Writes ledger rows only: `check`, `upgrade`, `rebase`.
 
@@ -111,6 +111,22 @@ Objects owned by an extension are excluded so the individual drops do not fail. 
 Because the object set comes from a real build, `public` objects the tree does not create are untouched. `--image` overrides the candidate image when the tree needs extensions the plain image lacks, for example `--image=pgvector/pgvector:pg17`. Without it the candidate build fails and the plan misses every downstream object.
 
 The plan is printed and the database name is required to confirm. `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt.
+
+## test
+
+Runs pgTAP tests against a throwaway database, needs docker, touches no server. Builds every `migrate.yml` file into a fresh postgres carrying pgTAP, runs every `.sql` file under the folders the `tests:` key declares, and streams their TAP output. The pgTAP image derives from `postgres:17`, or from `--image=<base>`, and is built once as `smig-pgtap:<major>`.
+
+`test [target]` narrows the run: a folder name such as `prophet`, a file stem such as `claims`, or `folder/stem`.
+
+`--from=<ref>` adds a second run, section `upgraded from <ref>`: the database is bootstrapped from the tree at that git ref, preflight runs against the working tree so a changed base or seed file replays exactly as it does under `up`, the migration files new since the ref are applied twice so a non idempotent migration fails, then the tests run again. Without it only the `fresh` run happens.
+
+The run exits nonzero on any `not ok` line, a missing or mismatched plan, or a bail out, and a file whose batch errors is reported as `Bail out! <error>`. Default output is the TAP stream plus a section per folder with per file counts; `-v` adds the diagnostic lines; `-s` prints only failures. `--json` emits the parsed results as one document and silences everything else. `--keep` leaves the container up and prints `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` and `PGPASSWORD` lines to export.
+
+## test new
+
+`test new <name>` writes `<tests dir>/<name>.sql` with `BEGIN; SELECT plan(1); SELECT ok(true, '<name>'); SELECT * FROM finish(); ROLLBACK;`. When `migrate.yml` declares several tests folders the name is given as `folder/name`. An existing file is refused.
+
+`--rows="<sql>"` builds the throwaway database exactly as `test` does, runs the query once, and writes a `results_eq($$<sql>$$, $$VALUES (...)$$, '<name>')` assertion with the observed rows as typed literals in place of the placeholder, or `is_empty` when the query returns nothing. On an existing file the assertion is inserted before `finish()` and `plan(n)` is bumped. `--from` is not accepted here.
 
 ## completion
 

@@ -18,7 +18,7 @@ type container struct {
 	Cfg  *config.Config
 }
 
-func startContainer(ctx context.Context, base *config.Config, image string) (*container, *db.DB, error) {
+func startContainer(ctx context.Context, base *config.Config, image, prefix string) (*container, *db.DB, error) {
 	if _, err := exec.LookPath("docker"); err != nil {
 		return nil, nil, fmt.Errorf("docker not found in PATH")
 	}
@@ -30,7 +30,7 @@ func startContainer(ctx context.Context, base *config.Config, image string) (*co
 	if password == "" {
 		password = "smigreconcile"
 	}
-	name := fmt.Sprintf("smig-reconcile-%d", time.Now().UnixNano())
+	name := fmt.Sprintf("%s-%d", prefix, time.Now().UnixNano())
 	args := []string{
 		"run", "--detach", "--rm", "--name", name,
 		"--publish", fmt.Sprintf("127.0.0.1:%d:5432", port),
@@ -68,6 +68,35 @@ func startContainer(ctx context.Context, base *config.Config, image string) (*co
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+func imageMajor(base string) string {
+	_, tag, _ := strings.Cut(base, ":")
+	tag = strings.TrimPrefix(tag, "pg")
+	i := 0
+	for i < len(tag) && tag[i] >= '0' && tag[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return "17"
+	}
+	return tag[:i]
+}
+
+func pgtapImage(ctx context.Context, base string) (string, error) {
+	major := imageMajor(base)
+	image := "smig-pgtap:" + major
+	if exec.CommandContext(ctx, "docker", "image", "inspect", image).Run() == nil {
+		return image, nil
+	}
+	dockerfile := "FROM " + base + "\n" +
+		"RUN apt-get update && apt-get install -y --no-install-recommends postgresql-" + major + "-pgtap && rm -rf /var/lib/apt/lists/*\n"
+	build := exec.CommandContext(ctx, "docker", "build", "--tag", image, "-")
+	build.Stdin = strings.NewReader(dockerfile)
+	if out, err := build.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("docker build %s from %s: %v: %s", image, base, err, strings.TrimSpace(string(out)))
+	}
+	return image, nil
 }
 
 func stopContainer(name string) {

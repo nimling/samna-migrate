@@ -19,6 +19,7 @@ smig down       Revert applied migrations with an Anthropic agent that synthesiz
 smig dump       Dump table data to json, one <schema>.<table>.json per table.
 smig insert     Insert rows from <schema>.<table>.json files back into their tables.
 smig destroy    Drop every object the migrate.yml tree creates, then reset the ledger. Needs docker.
+smig test       Run the pgTAP tests against a throwaway postgres built from the tree; --from=<ref> also upgrades from that ref. Needs docker.
 ```
 
 ## Agent guide
@@ -48,6 +49,8 @@ The database comparison (`--db`) starts a local docker postgres, applies every l
 `smig insert` loads those files back. Point it at a folder, which loads every `.json` inside, or at individual files, taken from positional arguments and repeated `--path` flags; with none the current directory is used. Each file's target table is read from its name, and rows load through `jsonb_populate_recordset` so every column is typed from the table itself, generated columns excluded. `--no-triggers` disables user triggers on the table for the load and re enables them after.
 
 `smig destroy` tears a database down to nothing the tree defines. It builds every `migrate.yml` file into a throwaway docker postgres, inventories exactly the objects those files produce, and drops that set from the live server: declared schemas other than `public` with `DROP SCHEMA CASCADE`, objects in `public` one by one with `DROP ... IF EXISTS CASCADE`, all in one transaction. It then resets `samna_migrate.file` so every row returns to pending and a following `up` re applies from scratch. Because the object set comes from an actual build, `public` objects the tree does not create are left untouched. The plan is printed for review and the database name is required to confirm; `--dry-run` prints the plan and drops nothing, `--yes` bypasses the prompt. Needs docker.
+
+`smig test` proves the tree with pgTAP and touches no server. It builds every `migrate.yml` file into a fresh docker postgres carrying pgTAP, an image derived once from `postgres:17` or `--image=<base>` and tagged `smig-pgtap:<major>`, then runs every `.sql` file under the folders the top level `tests:` key declares and streams their TAP output, one section per folder with per file counts. A target narrows the run to a folder, a file stem, or `folder/stem`. `--from=<ref>` adds a second run that bootstraps from the tree at that git ref, replays every base or seed file the working tree changed exactly as `up` would, applies the migration files new since the ref twice to prove them idempotent, and runs the tests again, so the stream carries a `fresh` and an `upgraded from <ref>` section. The run exits nonzero on any `not ok`, a missing or mismatched plan, or a bail out. `--keep` leaves the container up and prints its `PG*` connection lines, `--json` emits the parsed results as one document. `smig test new <name>` writes a test file skeleton, and `--rows="<sql>"` turns a query's observed rows on the throwaway database into a `results_eq` assertion.
 
 ## Drift guarding
 
@@ -82,7 +85,7 @@ just build     # produces bin/smig with version ldflags
 
 ```
 cmd/                  entrypoint
-internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, rebase, down, dump, insert, destroy
+internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, rebase, down, dump, insert, destroy, test
 internal/data/        json data dump and insert, teardown drop planner
 internal/config/      env and dotenv loader
 internal/db/          pgxpool wrapper and psql delegate
@@ -94,6 +97,7 @@ internal/reconcile/   file and object audit, git style diff, container proof
 internal/sqlscan/     SQL statement and object scanner
 internal/merge/       rebase live SQL into .upgraded/
 internal/lint/        static step file checks
+internal/tap/         TAP stream parser for smig test
 internal/steps/       migrate.yml parser
 internal/log/         ansi styled output and diff rendering
 pkg/cli/              version and schema version constants

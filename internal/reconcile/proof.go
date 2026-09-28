@@ -69,7 +69,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 	}
 
 	log.Header("start disposable postgres " + image)
-	cont, cand, err := startContainer(ctx, cfg, image)
+	cont, cand, err := startContainer(ctx, cfg, image, "smig-reconcile")
 	if err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func Run(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.C
 		}
 
 		log.Header("verdict determinism: second clean bootstrap matches the first")
-		cont2, cand2, err := startContainer(ctx, cfg, image)
+		cont2, cand2, err := startContainer(ctx, cfg, image, "smig-reconcile")
 		if err != nil {
 			return err
 		}
@@ -198,37 +198,85 @@ func (c *ContainerDiff) Candidate() map[string]string {
 	return c.cand
 }
 
-func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
-	candidateDir, candSteps, err := materializeCandidate(stepsCfg, cfg.StepsFile, dbDir, "")
+type Candidate struct {
+	Dir      string
+	Steps    string
+	StepsCfg *steps.Config
+	Name     string
+	Port     int
+	Cfg      *config.Config
+	DB       *db.DB
+	keep     bool
+}
+
+func StartCandidate(ctx context.Context, cfg *config.Config, stepsCfg *steps.Config, stepsFile, dbDir, image, prefix string, keep bool) (*Candidate, error) {
+	candidateDir, candSteps, err := materializeCandidate(stepsCfg, stepsFile, dbDir, "")
 	if err != nil {
 		return nil, err
-	}
-	if !opts.Keep {
-		defer os.RemoveAll(candidateDir)
 	}
 	candStepsCfg, err := steps.Load(candSteps)
 	if err != nil {
+		os.RemoveAll(candidateDir)
 		return nil, err
 	}
+	cont, cand, err := startContainer(ctx, cfg, image, prefix)
+	if err != nil {
+		os.RemoveAll(candidateDir)
+		return nil, err
+	}
+	return &Candidate{
+		Dir:      candidateDir,
+		Steps:    candSteps,
+		StepsCfg: candStepsCfg,
+		Name:     cont.Name,
+		Port:     cont.Port,
+		Cfg:      cont.Cfg,
+		DB:       cand,
+		keep:     keep,
+	}, nil
+}
+
+func StartPgtapCandidate(ctx context.Context, cfg *config.Config, stepsCfg *steps.Config, stepsFile, dbDir, base string, keep bool) (*Candidate, error) {
+	if base == "" {
+		base = "postgres:17"
+	}
+	image, err := pgtapImage(ctx, base)
+	if err != nil {
+		return nil, err
+	}
+	return StartCandidate(ctx, cfg, stepsCfg, stepsFile, dbDir, image, "smig-test", keep)
+}
+
+func (c *Candidate) Bootstrap(ctx context.Context, toolVersion string) error {
+	return bootstrapCandidate(ctx, c.DB, c.Cfg, c.StepsCfg, c.Steps, c.Dir, toolVersion)
+}
+
+func (c *Candidate) Close() {
+	c.DB.Close()
+	if c.keep {
+		return
+	}
+	stopContainer(c.Name)
+	os.RemoveAll(c.Dir)
+}
+
+func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCfg *steps.Config, dbDir, toolVersion string, opts Options) (*ContainerDiff, error) {
 	image := opts.Image
 	if image == "" {
 		image = imageForServer(ctx, live)
 	}
 	log.Info("creating a fresh %s and deploying %s into it", image, dbDir)
-	cont, cand, err := startContainer(ctx, cfg, image)
+	c, err := StartCandidate(ctx, cfg, stepsCfg, cfg.StepsFile, dbDir, image, "smig-reconcile", opts.Keep)
 	if err != nil {
 		return nil, err
 	}
-	defer cand.Close()
-	if !opts.Keep {
-		defer stopContainer(cont.Name)
-	}
+	defer c.Close()
 
 	prev := log.Level
 	if log.Level < log.LevelVerbose {
 		log.Level = log.LevelSilent
 	}
-	total, buildErrs, err := buildCandidateResilient(ctx, cand, cont.Cfg, candStepsCfg, candSteps, candidateDir, toolVersion)
+	total, buildErrs, err := buildCandidateResilient(ctx, c.DB, c.Cfg, c.StepsCfg, c.Steps, c.Dir, toolVersion)
 	log.Level = prev
 	if err != nil {
 		return nil, err
@@ -240,12 +288,12 @@ func CompareToLive(ctx context.Context, live *db.DB, cfg *config.Config, stepsCf
 	if err != nil {
 		return nil, err
 	}
-	candInv, err := Inventory(ctx, cand, schemas)
+	candInv, err := Inventory(ctx, c.DB, schemas)
 	if err != nil {
 		return nil, err
 	}
 	if opts.Keep {
-		log.Plain("container kept: %s on port %d, candidate tree at %s", cont.Name, cont.Port, candidateDir)
+		log.Plain("container kept: %s on port %d, candidate tree at %s", c.Name, c.Port, c.Dir)
 	}
 	index, _ := collectLocalObjects(stepsCfg, dbDir)
 	extObjs, err := ExtensionObjects(ctx, live, schemas)
