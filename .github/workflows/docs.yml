@@ -45,6 +45,6 @@ jobs:
         if: steps.changed.outputs.changed == 'true'
         uses: nimling/nimpress/actions/docs-notify@v2
         with:
-          docs-repo: nimling/samna
+          docs-repo: nimling/samna-developer
           token: ${{ steps.app.outputs.token }}
           export-dir: ${{ env.EXPORT_DIR }}
