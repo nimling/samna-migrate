@@ -39,7 +39,7 @@ jobs:
           app-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           owner: nimling
-          repositories: samna
+          repositories: samna-developer
 
       - name: Notify docs
         if: steps.changed.outputs.changed == 'true'
