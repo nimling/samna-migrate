@@ -1,31 +1,22 @@
-# Deploy rules
+# Testing and releasing smig
 
-This repo publishes one artefact: the `smig` CLI, consumed as a Go module via `go get github.com/nimling/samna-migrate` and installed locally via `just install`. The full procedure lives at `.claude/skills/deploy/SKILL.md`. The constraints below apply outside of any single deploy run.
+## Tests
 
-## Never
+1. Pure logic: `_test.go` beside the code. Postgres paths: `test/integration/`. CLI behaviour: `test/e2e/`. `test/live/` needs `-tags=live` and `ANTHROPIC_API_KEY`, and no recipe runs it.
+2. `just test` runs `test-go` and `test-docker`. `test-docker` needs docker: it builds `database/smig/Dockerfile` into a fake bookable postgres on port 5436 and tears it down after. `just test-go` skips docker.
+3. Cover anything that changes exit behaviour, a ledger write, a preflight or reconcile verdict, or a `samna_migrate` schema step.
 
-1. Edit `APP_VERSION` in `.env` by hand. `../sbump/sbump.sh` owns that field. Hand edits drift from the tag.
+## Schema chain
 
-2. Tag manually with `git tag` or `git push --tags`. `just deploy` writes the tag and pushes it as one operation via `sbump`.
+A change under `internal/upgrade/sql/` adds `upgrade_to_<n>.sql`, wires it into the `//go:embed` list and the switch in `internal/upgrade/upgrade.go`, and bumps `SchemaVersion` in `pkg/cli/version.go`. Missing any of the three bricks every consumer's boot check. A `SchemaVersion` bump is at least a minor.
 
-3. Use `--no-verify` or `--no-gpg-sign` on commits going out as part of a release.
+## Skill
 
-4. Skip `just test`, `just vet`, or `just build` before `just deploy`. A red test, a vet finding, or a failing build must block the bump.
+`.claude/skills/smig` is embedded into the binary by `skill.go` and installed by `smig skill put`. Edit it with the code it describes; it ships in the next release.
 
-5. Run `go build`, `go test`, or `sbump.sh` directly. The `justfile` recipes are the contract: `just build` injects the version ldflags, `just test` runs every test suite, `just deploy` bumps and tags.
+## Releasing
 
-6. Ship a change to `internal/upgrade/sql/` without bumping `SchemaVersion` in `pkg/cli/` and adding the matching `upgrade_to_<n>.sql` step. The boot check on every deployed consumer compares the two.
-
-## Always
-
-1. Add or extend tests for any change with an observable contract: package level `_test.go` files for pure logic, `test/integration/` for paths that need a real postgres, `test/e2e/` for CLI level behaviour.
-
-2. `just test` runs the integration and e2e suites along with the unit tests, so it needs docker and the `../bookable_server_test/` sibling checkout, especially when the change touches `internal/apply`, `internal/preflight`, `internal/upgrade`, `internal/merge`, `internal/reconcile`, or `internal/schema`.
-
-3. Write a single sentence commit message that describes the user visible change. The release notes derive from `git log` after the tag.
-
-4. Refresh `just install` after a deploy so the local `smig` matches the published tag.
-
-## Version policy
-
-`just deploy` does a patch bump by default. For minor or major, pass the explicit argument to `sbump.sh` instead. The repo does not gate this; the human running the deploy picks the right bump. A `SchemaVersion` bump in `pkg/cli/` is always at least a minor.
+1. `just test` and `just build` pass first.
+2. Commit, push, then `just deploy` (patch) or `just deploy minor|major`. It moves `APP_VERSION` and the `smig-version` default in `action.yml` together, tags and pushes.
+3. `just install` afterwards so the local `smig` matches the tag.
+4. Never hand edit `APP_VERSION` or `action.yml`'s pin, never `git tag`, never `go build` for a release binary: `just build` injects the version ldflags.
