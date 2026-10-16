@@ -14,6 +14,9 @@ on:
 permissions:
   contents: write
 
+env:
+  GOPRIVATE: github.com/nimling/*
+
 jobs:
   version:
     runs-on: ubuntu-latest
@@ -41,6 +44,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Configure Git for private repos
+        run: git config --global url."https://${{ secrets.DOCKER_PACKAGE_READ }}@github.com/".insteadOf "https://github.com/"
       - name: Vet
         run: go vet ./...
       - name: Unit tests
@@ -61,6 +66,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - name: Configure Git for private repos
+        run: git config --global url."https://${{ secrets.DOCKER_PACKAGE_READ }}@github.com/".insteadOf "https://github.com/"
       - name: Build
         env:
           GOOS: ${{ matrix.os }}
