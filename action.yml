@@ -45,6 +45,8 @@ runs:
     - name: Install smig
       shell: bash
       run: |
+        if [ -n "${GH_REPO_TOKEN:-}" ]; then git config --global url."https://${GH_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"; fi
+        export GOPRIVATE=github.com/nimling/*
         go install -ldflags "-X github.com/nimling/samna-migrate/pkg/cli.Version=v${{ inputs.smig-version }}" github.com/nimling/samna-migrate/cmd@v${{ inputs.smig-version }}
         mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/smig"
         echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
