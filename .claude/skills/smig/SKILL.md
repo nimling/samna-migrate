@@ -88,3 +88,7 @@ Persistent flags: `--schema`, `--db-dir`, `--env`, `-y` or `--yes`, `--force`, `
 6. Prefer `stat` before any write, and remember `check` itself writes.
 
 7. `insert` writes rows. Confirm `PGDATABASE` first, the same as any write path.
+
+## mcp
+
+`smig mcp` serves every command but `skill`, `completion`, `version` and `help` as a tool over the model context protocol on stdio, named by its path with the positional arguments as `args` and the flags as `flags`. A tool call runs `smig` itself in the directory claude was started in, so it reads the same environment and `--env=<file>`. Each file `up`, `run` or `rebase` applies is reported as a step, and a host that renders MCP Apps shows them live with the result on the `ui://smig/run` page.

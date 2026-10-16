@@ -3,6 +3,8 @@ package apply
 import (
 	"context"
 	"fmt"
+	"github.com/nimling/nimbody/respond"
+	"github.com/nimling/nimbody/stream"
 	"os"
 	"path/filepath"
 	"time"
@@ -119,6 +121,9 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		}
 		vars = expanded
 	}
+	if stream.Machine() {
+		report(respond.Step{ID: p.FilePath, Label: "Apply " + p.FilePath, Status: "running", StartedAt: start.UTC()})
+	}
 	runErr := d.RunFile(ctx, abs, preSQL, vars)
 	end := time.Now()
 	durMs := end.Sub(start).Milliseconds()
@@ -127,6 +132,15 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 	errMsg := ""
 	if runErr != nil {
 		errMsg = runErr.Error()
+	}
+	if stream.Machine() {
+		ended := end.UTC()
+		step := respond.Step{ID: p.FilePath, Label: "Apply " + p.FilePath, Status: "done", StartedAt: start.UTC(), EndedAt: &ended, Data: durMs}
+		if runErr != nil {
+			step.Status = "failed"
+			step.Error = errMsg
+		}
+		report(step)
 	}
 
 	var attempt int
@@ -231,3 +245,5 @@ var _ = pgx.ErrNoRows
 
 // suppressUnused keeps log used at package scope even if branches removed.
 var _ = log.Info
+
+var report = stream.Report(os.Stderr)

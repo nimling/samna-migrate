@@ -19,7 +19,7 @@ install: build
     install -m 755 bin/smig `go env GOPATH`/bin/smig
 
 deploy level="patch":
-    @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --workflow
+    @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --auto --workflow
 
 # Run every test: the go tests and the docker tests.
 test: test-go test-docker
