@@ -22,15 +22,15 @@ deploy level="patch":
     @sbump {{level}} --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --auto --workflow
 
 # Run every test: the go tests and the docker tests.
-test: test-go test-docker
+test name="": (test-go name) (test-docker name)
 
 # Run only the go tests, no docker.
-test-go:
-    go test ./...
+test-go name="":
+    go test ./... {{ if name != "" { "-run " + quote(name) } else { "" } }}
 
 # Run the docker tests: build a fake bookable postgres with the smig tool at
 # image init, then run the tool's docker-backed suites against it. Needs docker.
-test-docker: build
+test-docker name="": build
     #!/usr/bin/env bash
     set -euo pipefail
     trap 'docker rm -f {{DB_NAME}} >/dev/null 2>&1 || true; docker volume rm {{DB_NAME}}-data >/dev/null 2>&1 || true' EXIT
@@ -41,6 +41,6 @@ test-docker: build
     docker run -d --name {{DB_NAME}} -p {{DB_PORT}}:5432 -e SAUTH_APP_SLUG=bookable -v {{DB_NAME}}-data:/var/lib/postgresql/data {{DB_IMAGE}} >/dev/null
     for i in $(seq 1 150); do docker exec {{DB_NAME}} pg_isready -h 127.0.0.1 -U bookable >/dev/null 2>&1 && break; sleep 2; done
     PGHOST=localhost PGPORT={{DB_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
-        go test ./test/e2e/... -tags=e2e -count=1
+        go test ./test/e2e/... -tags=e2e -count=1 {{ if name != "" { "-run " + quote(name) } else { "" } }}
     PGHOST=localhost PGPORT={{DB_PORT}} PGUSER=bookable PGPASSWORD=bookable PGDATABASE=bookable \
-        go test ./test/integration/... -tags=integration -count=1
+        go test ./test/integration/... -tags=integration -count=1 {{ if name != "" { "-run " + quote(name) } else { "" } }}

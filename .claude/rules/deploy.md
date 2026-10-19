@@ -1,5 +1,7 @@
 # Testing and releasing smig
 
+The release procedure and the bump commands are the `deploy` skill, the test recipes the `test` skill, and building and running the checkout the `run` skill, under `.claude/skills/`.
+
 ## Tests
 
 1. Pure logic: `_test.go` beside the code. Postgres paths: `test/integration/`. CLI behaviour: `test/e2e/`. `test/live/` needs `-tags=live` and `ANTHROPIC_API_KEY`, and no recipe runs it.
@@ -12,7 +14,7 @@ A change under `internal/upgrade/sql/` adds `upgrade_to_<n>.sql`, wires it into 
 
 ## Skill
 
-`.claude/skills/smig` is embedded into the binary by `skill.go` and installed by `smig skill put`. Edit it with the code it describes; it ships in the next release.
+`.claude/skills/smig` is embedded into the binary by `skill.go` and installed by `smig skill put`. Edit it with the code it describes; it ships in the next release. The workspace reads it through the symlink `../.claude/skills/smig`.
 
 ## Releasing
 
