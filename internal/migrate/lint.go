@@ -13,8 +13,9 @@ import (
 var lintStrict bool
 
 var lintCmd = &cobra.Command{
-	Use:   "lint",
-	Short: "Static checks on every step file, no database needed",
+	Use:         "lint",
+	Short:       "Static checks on every step file, no database needed",
+	Annotations: map[string]string{"mcp": "read"},
 	Long: `Walks every file in every step and reports:
 
   error  filename grammar violations on any step

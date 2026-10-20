@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	nimcli "github.com/nimling/nimbody/cli"
 	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/data"
 	"github.com/nimling/samna-migrate/internal/db"
@@ -121,7 +122,7 @@ func resolveTables(available []data.Table, requested []string) ([]data.Table, er
 }
 
 func promptPath() string {
-	if !stdinTTY() {
+	if !nimcli.Terminal(os.Stdin) {
 		return "."
 	}
 	fmt.Print("output directory [.]: ")
@@ -138,7 +139,7 @@ func promptPath() string {
 }
 
 func pickTables(tables []data.Table) ([]data.Table, error) {
-	if !stdinTTY() || !stdoutTTY() {
+	if !nimcli.Terminal(os.Stdin) || !nimcli.Terminal(os.Stdout) {
 		return nil, fmt.Errorf("no --all or --table given and no interactive tty")
 	}
 	restore := cbreak()
@@ -149,13 +150,17 @@ func pickTables(tables []data.Table) ([]data.Table, error) {
 	fmt.Print("\033[?25l")
 	defer fmt.Print("\033[?25h")
 
+	gray, cyan, reset := "\033[90m", "\033[36m", "\033[0m"
+	if !nimcli.Colour(os.Stdout) {
+		gray, cyan, reset = "", "", ""
+	}
 	checked := make([]bool, len(tables))
 	cursor := 0
 	draw := func(first bool) {
 		if !first {
 			fmt.Printf("\033[%dA", len(tables)+1)
 		}
-		fmt.Print("\r\033[K\033[90mspace toggles, a all, enter confirms, q aborts\033[0m\n")
+		fmt.Print("\r\033[K" + gray + "space toggles, a all, enter confirms, q aborts" + reset + "\n")
 		for i, t := range tables {
 			mark := " "
 			if checked[i] {
@@ -163,9 +168,9 @@ func pickTables(tables []data.Table) ([]data.Table, error) {
 			}
 			pointer := "  "
 			if i == cursor {
-				pointer = "\033[36m> "
+				pointer = cyan + "> "
 			}
-			fmt.Printf("\r\033[K%s[%s] %s\033[0m\n", pointer, mark, t.Qualified())
+			fmt.Printf("\r\033[K%s[%s] %s%s\n", pointer, mark, t.Qualified(), reset)
 		}
 	}
 	draw(true)

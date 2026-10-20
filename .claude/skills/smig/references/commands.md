@@ -134,4 +134,12 @@ Prints the shell completion script, or installs it with `--auto`. `--auto` detec
 
 ## skill
 
-`skill get` prints the skill document to stdout. `skill put` installs the whole skill tree under `~/.claude/skills/smig`, or into `.claude` of the current directory with `--project`. The tree is embedded in the binary, so an installed skill always matches the installed tool.
+`skill get` prints the skill document to stdout. `skill install` installs the whole skill tree under `~/.claude/skills/smig`, or into `.claude` of the current directory with `--project`. The tree is embedded in the binary, so an installed skill always matches the installed tool.
+
+## plugin
+
+`plugin install` writes the Claude Code plugin under `~/.smig/plugin`, the skill and an mcp server running `smig mcp`, and installs it for the user, or the project with `--project`. `plugin desktop` adds the `smig` mcp server to the Claude Desktop config. `plugin status` exits 3 when the installed plugin does not match this binary.
+
+## version
+
+Prints the build version, the `samna_migrate` schema version it carries, the commit and the build time. `--json` prints the same fields as an object.

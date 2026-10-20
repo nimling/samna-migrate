@@ -16,7 +16,6 @@ var (
 	reconcileKeep        bool
 	reconcileImage       string
 	reconcileStopOnError bool
-	reconcileJSON        bool
 	reconcileFiles       bool
 	reconcileObjects     bool
 	reconcileGit         bool
@@ -24,8 +23,9 @@ var (
 )
 
 var reconcileCmd = &cobra.Command{
-	Use:   "reconcile",
-	Short: "Compare the local database folder against the live server in depth",
+	Use:         "reconcile",
+	Short:       "Compare the local database folder against the live server in depth",
+	Annotations: map[string]string{"mcp": "read"},
 	Long: `reconcile fuses four ways of finding drift and renders everything that
 differs in a git-diff look. The two axes are independent.
 
@@ -79,7 +79,7 @@ review while the build is incomplete.`,
 			sel = reconcile.Sections{Files: true, Objects: true, Git: true, Db: true}
 		}
 
-		if reconcileJSON {
+		if jsonOutput {
 			log.Level = log.LevelSilent
 		}
 
@@ -113,7 +113,7 @@ review while the build is incomplete.`,
 		}
 
 		joint := reconcile.BuildJoint(sel, cfg.PGDatabase+"@"+hostOrLocalhost(cfg), audit, objRep, cdiff, commits, dbDir)
-		if reconcileJSON {
+		if jsonOutput {
 			return reconcile.WriteJSON(os.Stdout, joint)
 		}
 		reconcile.RenderJoint(joint)
@@ -126,7 +126,6 @@ func init() {
 	reconcileCmd.Flags().BoolVar(&reconcileObjects, "objects", false, "Render the object analysis section")
 	reconcileCmd.Flags().BoolVar(&reconcileGit, "git", false, "Render the git history section")
 	reconcileCmd.Flags().BoolVar(&reconcileDb, "db", false, "Render the database to database comparison section")
-	reconcileCmd.Flags().BoolVar(&reconcileJSON, "json", false, "Emit the selected sections as JSON for use in another session")
 	reconcileCmd.Flags().BoolVar(&reconcileKeep, "keep", false, "Leave the container and candidate tree in place for inspection")
 	reconcileCmd.Flags().StringVar(&reconcileImage, "image", "", "Postgres docker image, defaults to the live server major version")
 	reconcileCmd.Flags().BoolVar(&reconcileStopOnError, "stop-one-error", false, "Stop the file audit at the first difference instead of reporting all")

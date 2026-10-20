@@ -28,7 +28,6 @@ var (
 	testFrom  string
 	testKeep  bool
 	testImage string
-	testJSON  bool
 	testRows  string
 )
 
@@ -96,7 +95,7 @@ parsed results as one document.`,
 			}
 			return fmt.Errorf("no .sql test files under %s", strings.Join(stepsCfg.Tests, ", "))
 		}
-		if testJSON {
+		if jsonOutput {
 			log.Level = log.LevelSilent
 		}
 
@@ -125,7 +124,7 @@ parsed results as one document.`,
 			}
 			report.Passed = report.Passed && r.Passed
 		}
-		if testJSON {
+		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(report); err != nil {
@@ -179,7 +178,7 @@ func keepTestContainer(c *reconcile.Candidate) *testContainer {
 	if !testKeep {
 		return nil
 	}
-	if !testJSON {
+	if !jsonOutput {
 		fmt.Printf("container kept: %s on port %d, candidate tree at %s\n", c.Name, c.Port, c.Dir)
 		fmt.Printf("  PGHOST=%s\n", c.Cfg.PGHost)
 		fmt.Printf("  PGPORT=%s\n", c.Cfg.PGPort)
@@ -362,7 +361,7 @@ func testRel(p string) string {
 }
 
 func printTapLine(line string) {
-	if testJSON {
+	if jsonOutput {
 		return
 	}
 	switch {
@@ -600,7 +599,6 @@ func init() {
 	testCmd.Flags().StringVar(&testFrom, "from", "", "Git ref to bootstrap from, then upgrade with the working tree and run the tests again")
 	testCmd.Flags().BoolVar(&testKeep, "keep", false, "Leave the container and candidate tree in place for inspection")
 	testCmd.Flags().StringVar(&testImage, "image", "", "Postgres docker image the pgTAP image derives from, defaults to postgres:17")
-	testCmd.Flags().BoolVar(&testJSON, "json", false, "Emit the parsed results as JSON")
 	testNewCmd.Flags().StringVar(&testRows, "rows", "", "SQL whose observed rows become a results_eq assertion")
 	testNewCmd.Flags().StringVar(&testImage, "image", "", "Postgres docker image the pgTAP image derives from, defaults to postgres:17")
 	testCmd.AddCommand(testNewCmd)

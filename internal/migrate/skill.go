@@ -1,48 +1,40 @@
 package migrate
 
 import (
-	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	nimcli "github.com/nimling/nimbody/cli"
 	root "github.com/nimling/samna-migrate"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/spf13/cobra"
 )
 
-var skillProject bool
+var skillDocument = func() string {
+	document, err := root.SkillTree.ReadFile(root.SkillRoot + "/SKILL.md")
+	if err != nil {
+		panic(err)
+	}
+	return string(document)
+}()
 
-var skillCmd = &cobra.Command{
-	Use:   "skill",
-	Short: "The claude skill that teaches an agent to drive this cli",
-}
-
-var skillGetCmd = &cobra.Command{
-	Use:   "get [file]",
-	Short: "Print the skill document, or one named file from the skill tree",
-	Args:  cobra.MaximumNArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		name := "SKILL.md"
-		if len(args) == 1 {
-			name = args[0]
+func skillCmd() *cobra.Command {
+	skill := nimcli.SkillCommand("smig", skillDocument)
+	for _, child := range skill.Commands() {
+		if child.Name() != "install" {
+			continue
 		}
-		b, err := root.SkillTree.ReadFile(filepath.Join(root.SkillRoot, name))
-		if err != nil {
-			return fmt.Errorf("no such file in the skill tree: %s", name)
+		child.Short = "Install the whole skill tree under ~/.claude/skills, or into the current project with --project"
+		child.RunE = func(cmd *cobra.Command, args []string) error {
+			project, err := cmd.Flags().GetBool("project")
+			if err != nil {
+				return err
+			}
+			return installSkill(!project)
 		}
-		cmd.Print(string(b))
-		return nil
-	},
-}
-
-var skillPutCmd = &cobra.Command{
-	Use:   "put",
-	Short: "Install the skill under ~/.claude/skills, or into the current project with --project",
-	Args:  cobra.NoArgs,
-	RunE: func(cmd *cobra.Command, args []string) error {
-		return installSkill(!skillProject)
-	},
+	}
+	return skill
 }
 
 func installSkill(global bool) error {
@@ -89,7 +81,5 @@ func installSkill(global bool) error {
 }
 
 func init() {
-	skillPutCmd.Flags().BoolVar(&skillProject, "project", false, "Install into .claude of the current directory instead of the home directory")
-	skillCmd.AddCommand(skillGetCmd, skillPutCmd)
-	rootCmd.AddCommand(skillCmd)
+	rootCmd.AddCommand(skillCmd())
 }
