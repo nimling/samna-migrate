@@ -49,11 +49,6 @@ history squash leaves behind. Confirming the prompt is the statement that the
 local tree is the deployed truth.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		if envFile != "" {
-			if err := config.LoadDotEnv(envFile); err != nil {
-				return err
-			}
-		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir

@@ -36,11 +36,6 @@ re-applies from scratch. With --extensions the extensions the tree creates are d
 too (plpgsql is never dropped). Requires docker for the candidate build.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		if envFile != "" {
-			if err := config.LoadDotEnv(envFile); err != nil {
-				return err
-			}
-		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir

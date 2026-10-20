@@ -142,11 +142,6 @@ parsed results as one document.`,
 }
 
 func testSetup() (*config.Config, *steps.Config, error) {
-	if envFile != "" {
-		if err := config.LoadDotEnv(envFile); err != nil {
-			return nil, nil, err
-		}
-	}
 	cfg := config.FromEnv()
 	cfg.StepsFile = stepsFile
 	cfg.DBDir = dbDir

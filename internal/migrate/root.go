@@ -21,7 +21,6 @@ import (
 var (
 	stepsFile        string
 	dbDir            string
-	envFile          string
 	assumeYes        bool
 	force            bool
 	silent           bool
@@ -56,7 +55,17 @@ var rootCmd = &cobra.Command{
 	Version:       cli.Version,
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := settings.Load(cmd); err != nil {
+			return err
+		}
+		if !cmd.Flags().Changed("schema") {
+			stepsFile = envDefault("MIGRATE_SCHEMA", stepsFile)
+		}
+		if !cmd.Flags().Changed("db-dir") {
+			dbDir = envDefault("DB_DIR", dbDir)
+		}
+		assumeYes, _ = cmd.Flags().GetBool("yes")
 		switch {
 		case silent:
 			log.Level = log.LevelSilent
@@ -67,6 +76,7 @@ var rootCmd = &cobra.Command{
 		default:
 			log.Level = log.LevelNormal
 		}
+		return settings.Guard(cmd, args)
 	},
 }
 
@@ -385,10 +395,9 @@ func init() {
 		showBannerThenHelp(buf.String())
 	})
 
-	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", envDefault("MIGRATE_SCHEMA", "./database/migrate.yml"), "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
-	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", envDefault("DB_DIR", "./database"), "Path to database directory, defaults from DB_DIR")
-	rootCmd.PersistentFlags().StringVar(&envFile, "env", "", "Optional dotenv file to load")
-	rootCmd.PersistentFlags().BoolVarP(&assumeYes, "yes", "y", false, "Bypass interactive confirmation prompts")
+	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", "./database/migrate.yml", "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
+	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", "./database", "Path to database directory, defaults from DB_DIR")
+	settings.Flags(rootCmd)
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Bypass safety checks where supported")
 	rootCmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "Suppress all output except errors")
 	rootCmd.PersistentFlags().CountVarP(&verboseCount, "verbose", "v", "Verbose output, repeat as -vv for extreme")
@@ -404,4 +413,5 @@ func init() {
 	rootCmd.AddCommand(upgradeCmd)
 	rootCmd.AddCommand(statCmd)
 	rootCmd.AddCommand(checkCmd)
+	rootCmd.AddCommand(configCmd)
 }

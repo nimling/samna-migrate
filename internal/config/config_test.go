@@ -1,8 +1,6 @@
 package config
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -89,51 +87,5 @@ func TestConnString(t *testing.T) {
 	want := "host=h port=5432 user=u password=p dbname=d sslmode=disable"
 	if got != want {
 		t.Errorf("conn string mismatch:\n got  %q\n want %q", got, want)
-	}
-}
-
-func TestLoadDotEnv(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, ".env")
-	contents := `# comment
-PGHOST=example
-PGUSER="quoted"
-PGPORT='5435'
-
-EMPTY=
-`
-	if err := os.WriteFile(p, []byte(contents), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PGHOST", "")
-	t.Setenv("PGUSER", "")
-	t.Setenv("PGPORT", "")
-	t.Setenv("EMPTY", "")
-	if err := LoadDotEnv(p); err != nil {
-		t.Fatal(err)
-	}
-	if os.Getenv("PGHOST") != "example" {
-		t.Errorf("PGHOST: got %q", os.Getenv("PGHOST"))
-	}
-	if os.Getenv("PGUSER") != "quoted" {
-		t.Errorf("PGUSER quoted: got %q", os.Getenv("PGUSER"))
-	}
-	if os.Getenv("PGPORT") != "5435" {
-		t.Errorf("PGPORT single-quoted: got %q", os.Getenv("PGPORT"))
-	}
-}
-
-func TestLoadDotEnvNoOverride(t *testing.T) {
-	dir := t.TempDir()
-	p := filepath.Join(dir, ".env")
-	if err := os.WriteFile(p, []byte("PGHOST=from_dotenv\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PGHOST", "from_env")
-	if err := LoadDotEnv(p); err != nil {
-		t.Fatal(err)
-	}
-	if os.Getenv("PGHOST") != "from_env" {
-		t.Errorf("expected dotenv NOT to override existing env, got %q", os.Getenv("PGHOST"))
 	}
 }

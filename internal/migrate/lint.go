@@ -3,7 +3,6 @@ package migrate
 import (
 	"fmt"
 
-	"github.com/nimling/samna-migrate/internal/config"
 	"github.com/nimling/samna-migrate/internal/lint"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/internal/steps"
@@ -27,11 +26,6 @@ var lintCmd = &cobra.Command{
 
 Errors exit nonzero. --strict treats warnings as errors.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if envFile != "" {
-			if err := config.LoadDotEnv(envFile); err != nil {
-				return err
-			}
-		}
 		stepsCfg, err := steps.Load(stepsFile)
 		if err != nil {
 			return err
