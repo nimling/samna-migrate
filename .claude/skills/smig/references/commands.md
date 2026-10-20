@@ -142,4 +142,4 @@ Prints the shell completion script, or installs it with `--auto`. `--auto` detec
 
 ## version
 
-Prints the build version, the `samna_migrate` schema version it carries, the commit and the build time. `--json` prints the same fields as an object.
+Prints the build version, the `samna_migrate` schema version it carries, the commit and the build time. A table on a terminal, json in a pipe; `--json` forces json.

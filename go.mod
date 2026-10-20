@@ -5,7 +5,7 @@ go 1.25.0
 require (
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/jackc/pgx/v5 v5.7.5
-	github.com/nimling/nimbody v1.8.0
+	github.com/nimling/nimbody v1.9.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.9
 	gopkg.in/yaml.v3 v3.0.1
