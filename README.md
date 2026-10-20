@@ -87,7 +87,7 @@ just build     # produces bin/smig with version ldflags
 cmd/                  entrypoint
 internal/migrate/     cobra commands: up, upgrade, stat, check, merge, reconcile, lint, rebase, down, dump, insert, destroy, test
 internal/data/        json data dump and insert, teardown drop planner
-internal/config/      env and dotenv loader
+internal/config/      connection values read from the environment
 internal/db/          pgxpool wrapper and psql delegate
 internal/schema/      samna_migrate.* state helpers
 internal/upgrade/     schema chain and embedded SQL

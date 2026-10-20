@@ -34,11 +34,6 @@ comma joined, a subset is dumped. With neither, an interactive list lets you pic
 tables with the arrow keys and space, then asks for the output path.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		if envFile != "" {
-			if err := config.LoadDotEnv(envFile); err != nil {
-				return err
-			}
-		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir

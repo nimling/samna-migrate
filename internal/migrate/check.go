@@ -17,11 +17,6 @@ var checkCmd = &cobra.Command{
 	Annotations: map[string]string{"mcp": "write"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
-		if envFile != "" {
-			if err := config.LoadDotEnv(envFile); err != nil {
-				return err
-			}
-		}
 		cfg := config.FromEnv()
 		d, err := db.Open(ctx, cfg)
 		if err != nil {

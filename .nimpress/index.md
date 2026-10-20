@@ -32,7 +32,7 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 
 ## Targeting an environment
 
-`smig` reads the target database from the standard libpq variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`. Load a dotenv file with `--env=<file>`. Every long value flag takes its value with an equals sign: write `--env=.env.prd`, never `--env .env.prd`.
+`smig` reads the target database from the standard libpq variables `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`. Each resolves the flag, the process environment, `--env=<file>` dotenv layers that load every key, a local `.smig/config.yaml` found walking up from the working directory, then the named config in `~/.smig/config.yaml` picked by `--config=<name>`, `SMIG_CONFIG`, the local `use:`, then `default:`. `smig config set --to=prd pghost=... protected=true` writes a named config, `smig config get` prints what resolved and from which layer, and a `protected` config asks before every write. Every long value flag takes its value with an equals sign: write `--env=.env.prd`, never `--env .env.prd`.
 
 ## Reconcile is the drift check
 
