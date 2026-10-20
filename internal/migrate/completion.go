@@ -46,7 +46,7 @@ loads from its own completions directory and needs no rc change.
 				return err
 			}
 			if completionSkill {
-				return installSkill(true)
+				return installSkill()
 			}
 			return nil
 		}

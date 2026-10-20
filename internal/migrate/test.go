@@ -58,8 +58,9 @@ type testReport struct {
 }
 
 var testCmd = &cobra.Command{
-	Use:   "test [target]",
-	Short: "Run the pgTAP tests against a throwaway postgres built from migrate.yml",
+	Use:         "test [target]",
+	Short:       "Run the pgTAP tests against a throwaway postgres built from migrate.yml",
+	Annotations: map[string]string{"mcp": "read"},
 	Long: `test builds every migrate.yml file into a fresh docker postgres carrying pgTAP,
 then runs every .sql file under the folders the tests key declares and streams
 their TAP output. A target narrows the run to a folder, a file stem, or
@@ -432,8 +433,9 @@ func runTestFiles(ctx context.Context, c *reconcile.Candidate, section string, f
 }
 
 var testNewCmd = &cobra.Command{
-	Use:   "new <name>",
-	Short: "Write a pgTAP test file skeleton into the tests folder",
+	Use:         "new <name>",
+	Short:       "Write a pgTAP test file skeleton into the tests folder",
+	Annotations: map[string]string{"mcp": "write"},
 	Long: `test new writes <tests dir>/<name>.sql with a BEGIN, plan, one assertion,
 finish and ROLLBACK. When migrate.yml declares several tests folders the name
 is given as folder/name to pick one.

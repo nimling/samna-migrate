@@ -65,6 +65,6 @@ Running and explaining every `smig` command and authoring the files it applies. 
 
 ## mcp
 
-1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint` and `reconcile` are read only tools, `down` and `destroy` destructive, the rest write.
+1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint`, `reconcile` and `test` are read only tools, `down` and `destroy` destructive, the rest write.
 2. A tool call runs `smig` in the directory claude was started in, with the same environment and `--env=<file>`.
 3. Each file `up`, `run` or `rebase` applies is a step; a host that renders MCP Apps shows them live with the result on `ui://smig/run`.

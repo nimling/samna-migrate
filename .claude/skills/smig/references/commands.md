@@ -134,7 +134,7 @@ Prints the shell completion script, or installs it with `--auto`. `--auto` detec
 
 ## skill
 
-`skill get` prints the skill document to stdout. `skill install` installs the whole skill tree under `~/.claude/skills/smig`, or into `.claude` of the current directory with `--project`. The tree is embedded in the binary, so an installed skill always matches the installed tool.
+`skill get [file]` prints the skill document, or one file of the tree such as `references/commands.md`, to stdout. `skill install` installs the whole skill tree under `~/.claude/skills/smig`, or into `.claude` of the current directory with `--project`. The tree is embedded in the binary, so an installed skill always matches the installed tool.
 
 ## plugin
 

@@ -70,8 +70,8 @@ github.com/mattn/go-colorable v0.1.14 h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHP
 github.com/mattn/go-colorable v0.1.14/go.mod h1:6LmQG8QLFO4G5z1gPvYEzlUgJ2wF+stgPZH1UqBm1s8=
 github.com/mattn/go-isatty v0.0.20 h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=
 github.com/mattn/go-isatty v0.0.20/go.mod h1:W+V8PltTTMOvKvAeJH7IuucS94S2C6jfK/D7dTCTo3Y=
-github.com/nimling/nimbody v1.7.0 h1:QrQysdApB3zIfVs1r2TpTJOq3lUdRo7zKhvaTmEUghc=
-github.com/nimling/nimbody v1.7.0/go.mod h1:pUtjz18pkRezUddRDEPFE6b3c0arKycpvrUw79/xSnE=
+github.com/nimling/nimbody v1.8.0 h1:Ob6PG1wzIi7CC77ja4FRbr67KmWgiU0OcvKisxGTRek=
+github.com/nimling/nimbody v1.8.0/go.mod h1:pUtjz18pkRezUddRDEPFE6b3c0arKycpvrUw79/xSnE=
 github.com/onsi/gomega v1.34.1 h1:EUMJIKUjM8sKjYbtxQI9A4z2o+rruxnzNvpknOXie6k=
 github.com/onsi/gomega v1.34.1/go.mod h1:kU1QgUvBDLXBJq618Xvm2LUX6rSAfRaFRTcdOeDLwwY=
 github.com/pjbgf/sha1cd v0.6.0 h1:3WJ8Wz8gvDz29quX1OcEmkAlUg9diU4GxJHqs0/XiwU=

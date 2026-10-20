@@ -10,7 +10,7 @@ func init() {
 		Name:        "smig",
 		Owner:       "nimling",
 		Description: rootCmd.Short,
-		Skill:       skillDocument,
+		Tree:        skillTree,
 		Version:     func() string { return cli.Version },
 	}))
 }
