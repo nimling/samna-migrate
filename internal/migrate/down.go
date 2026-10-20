@@ -26,8 +26,9 @@ var (
 )
 
 var downCmd = &cobra.Command{
-	Use:   "down",
-	Short: "Revert applied migrations step by step using an Anthropic-powered agent to synthesize down SQL.",
+	Use:         "down",
+	Short:       "Revert applied migrations step by step using an Anthropic-powered agent to synthesize down SQL.",
+	Annotations: map[string]string{"mcp": "destructive"},
 	Long: `Walks applied migration rows in descending applied_position order and reverts each one.
 
 For each step:
@@ -112,12 +113,12 @@ func init() {
 }
 
 type target struct {
-	FileID         int
-	FilePath       string
-	StepName       string
-	ForwardSha     string
-	AppliedHistID  int
-	AppliedPos     *int
+	FileID        int
+	FilePath      string
+	StepName      string
+	ForwardSha    string
+	AppliedHistID int
+	AppliedPos    *int
 }
 
 func resolveDownTargets(ctx context.Context, d *db.DB, to string, steps int) ([]target, error) {

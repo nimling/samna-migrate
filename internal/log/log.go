@@ -2,8 +2,11 @@ package log
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
+
+	"github.com/nimling/nimbody/cli"
 )
 
 const (
@@ -27,11 +30,18 @@ const (
 
 var Level = LevelNormal
 
+func paint(out io.Writer, color, text string) string {
+	if text == "" || !cli.Colour(out) {
+		return text
+	}
+	return color + text + colorReset
+}
+
 func Header(msg string) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("\n%s%s%s%s\n", colorBold, colorCyan, msg, colorReset)
+	fmt.Printf("\n%s\n", paint(os.Stdout, colorBold+colorCyan, msg))
 }
 
 func Section(title, right string, rightEdge int) {
@@ -42,53 +52,53 @@ func Section(title, right string, rightEdge int) {
 	if pad < 1 {
 		pad = 1
 	}
-	fmt.Printf("\n%s%s▸ %s%s%s%s%s%s\n", colorBold, colorCyan, title, colorReset, strings.Repeat(" ", pad), colorGray, right, colorReset)
+	fmt.Printf("\n%s%s%s\n", paint(os.Stdout, colorBold+colorCyan, "▸ "+title), strings.Repeat(" ", pad), paint(os.Stdout, colorGray, right))
 }
 
 func Detail(format string, args ...any) {
 	if Level < LevelVerbose {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorGray, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorGray, fmt.Sprintf(format, args...)))
 }
 
 func Dim(format string, args ...any) {
 	if Level < LevelVerbose {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorFaint, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorFaint, fmt.Sprintf(format, args...)))
 }
 
 func Dump(format string, args ...any) {
 	if Level < LevelExtreme {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorFaint, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorFaint, fmt.Sprintf(format, args...)))
 }
 
 func Info(format string, args ...any) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorGray, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorGray, fmt.Sprintf(format, args...)))
 }
 
 func Success(format string, args ...any) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorGreen, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorGreen, fmt.Sprintf(format, args...)))
 }
 
 func Warn(format string, args ...any) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorYellow, fmt.Sprintf(format, args...), colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorYellow, fmt.Sprintf(format, args...)))
 }
 
 func Err(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "%s%s%s\n", colorRed, fmt.Sprintf(format, args...), colorReset)
+	fmt.Fprintf(os.Stderr, "%s\n", paint(os.Stderr, colorRed, fmt.Sprintf(format, args...)))
 }
 
 func Plain(format string, args ...any) {
@@ -106,14 +116,14 @@ func Step(name, detail string, rightEdge int) {
 	if pad < 1 {
 		pad = 1
 	}
-	fmt.Printf("  %s✓%s %s%s%s%s%s\n", colorGreen, colorReset, name, strings.Repeat(" ", pad), colorGray, detail, colorReset)
+	fmt.Printf("  %s %s%s%s\n", paint(os.Stdout, colorGreen, "✓"), name, strings.Repeat(" ", pad), paint(os.Stdout, colorGray, detail))
 }
 
 func DiffHunk(header string) {
 	if Level == LevelSilent {
 		return
 	}
-	fmt.Printf("%s%s%s\n", colorCyan, header, colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, colorCyan, header))
 }
 
 func DiffLine(op rune, text string) {
@@ -127,7 +137,7 @@ func DiffLine(op rune, text string) {
 	case '-':
 		color = colorRed
 	}
-	fmt.Printf("%s%c %s%s\n", color, op, text, colorReset)
+	fmt.Printf("%s\n", paint(os.Stdout, color, fmt.Sprintf("%c %s", op, text)))
 }
 
 func Fatal(format string, args ...any) {

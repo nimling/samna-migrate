@@ -12,8 +12,9 @@ import (
 )
 
 var checkCmd = &cobra.Command{
-	Use:   "check",
-	Short: "Preflight only. Validates equality and reports drift without applying.",
+	Use:         "check",
+	Short:       "Preflight only. Validates equality and reports drift without applying.",
+	Annotations: map[string]string{"mcp": "write"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		if envFile != "" {

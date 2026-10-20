@@ -28,7 +28,6 @@ var (
 	testFrom  string
 	testKeep  bool
 	testImage string
-	testJSON  bool
 	testRows  string
 )
 
@@ -59,8 +58,9 @@ type testReport struct {
 }
 
 var testCmd = &cobra.Command{
-	Use:   "test [target]",
-	Short: "Run the pgTAP tests against a throwaway postgres built from migrate.yml",
+	Use:         "test [target]",
+	Short:       "Run the pgTAP tests against a throwaway postgres built from migrate.yml",
+	Annotations: map[string]string{"mcp": "read"},
 	Long: `test builds every migrate.yml file into a fresh docker postgres carrying pgTAP,
 then runs every .sql file under the folders the tests key declares and streams
 their TAP output. A target narrows the run to a folder, a file stem, or
@@ -96,7 +96,7 @@ parsed results as one document.`,
 			}
 			return fmt.Errorf("no .sql test files under %s", strings.Join(stepsCfg.Tests, ", "))
 		}
-		if testJSON {
+		if jsonOutput {
 			log.Level = log.LevelSilent
 		}
 
@@ -125,7 +125,7 @@ parsed results as one document.`,
 			}
 			report.Passed = report.Passed && r.Passed
 		}
-		if testJSON {
+		if jsonOutput {
 			enc := json.NewEncoder(os.Stdout)
 			enc.SetIndent("", "  ")
 			if err := enc.Encode(report); err != nil {
@@ -179,7 +179,7 @@ func keepTestContainer(c *reconcile.Candidate) *testContainer {
 	if !testKeep {
 		return nil
 	}
-	if !testJSON {
+	if !jsonOutput {
 		fmt.Printf("container kept: %s on port %d, candidate tree at %s\n", c.Name, c.Port, c.Dir)
 		fmt.Printf("  PGHOST=%s\n", c.Cfg.PGHost)
 		fmt.Printf("  PGPORT=%s\n", c.Cfg.PGPort)
@@ -362,7 +362,7 @@ func testRel(p string) string {
 }
 
 func printTapLine(line string) {
-	if testJSON {
+	if jsonOutput {
 		return
 	}
 	switch {
@@ -433,8 +433,9 @@ func runTestFiles(ctx context.Context, c *reconcile.Candidate, section string, f
 }
 
 var testNewCmd = &cobra.Command{
-	Use:   "new <name>",
-	Short: "Write a pgTAP test file skeleton into the tests folder",
+	Use:         "new <name>",
+	Short:       "Write a pgTAP test file skeleton into the tests folder",
+	Annotations: map[string]string{"mcp": "write"},
 	Long: `test new writes <tests dir>/<name>.sql with a BEGIN, plan, one assertion,
 finish and ROLLBACK. When migrate.yml declares several tests folders the name
 is given as folder/name to pick one.
@@ -600,7 +601,6 @@ func init() {
 	testCmd.Flags().StringVar(&testFrom, "from", "", "Git ref to bootstrap from, then upgrade with the working tree and run the tests again")
 	testCmd.Flags().BoolVar(&testKeep, "keep", false, "Leave the container and candidate tree in place for inspection")
 	testCmd.Flags().StringVar(&testImage, "image", "", "Postgres docker image the pgTAP image derives from, defaults to postgres:17")
-	testCmd.Flags().BoolVar(&testJSON, "json", false, "Emit the parsed results as JSON")
 	testNewCmd.Flags().StringVar(&testRows, "rows", "", "SQL whose observed rows become a results_eq assertion")
 	testNewCmd.Flags().StringVar(&testImage, "image", "", "Postgres docker image the pgTAP image derives from, defaults to postgres:17")
 	testCmd.AddCommand(testNewCmd)

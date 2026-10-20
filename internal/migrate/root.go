@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	nimcli "github.com/nimling/nimbody/cli"
 	"github.com/nimling/samna-migrate/internal/log"
 	"github.com/nimling/samna-migrate/pkg/cli"
 	"github.com/spf13/cobra"
@@ -26,6 +27,7 @@ var (
 	silent           bool
 	verboseCount     int
 	extremelyVerbose bool
+	jsonOutput       bool
 )
 
 func envDefault(key, def string) string {
@@ -68,11 +70,12 @@ var rootCmd = &cobra.Command{
 	},
 }
 
-func Execute() error {
+func Execute() int {
 	if err := requireEqualsFlags(os.Args[1:]); err != nil {
-		return err
+		nimcli.Report(rootCmd.ErrOrStderr(), rootCmd.Name(), err)
+		return nimcli.ExitCode(err)
 	}
-	return rootCmd.Execute()
+	return nimcli.Execute(rootCmd)
 }
 
 func requireEqualsFlags(args []string) error {
@@ -84,7 +87,7 @@ func requireEqualsFlags(args []string) error {
 		if strings.HasPrefix(a, "--") && !strings.Contains(a, "=") {
 			name := a[2:]
 			if value[name] {
-				return fmt.Errorf("long flag --%s takes its value with an equals sign: --%s=<value>", name, name)
+				return nimcli.Rejected(fmt.Sprintf("long flag --%s takes its value with an equals sign: --%s=<value>", name, name), "Run 'smig --help' for usage.")
 			}
 		}
 	}
@@ -131,14 +134,6 @@ func wrapBlock(s string, width int) string {
 		lines = append(lines, cur)
 	}
 	return strings.Join(lines, "\n")
-}
-
-func stdoutTTY() bool {
-	fi, err := os.Stdout.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 const (
@@ -228,6 +223,7 @@ func ownerColumns(segs []letterSeg, w int) []int {
 func renderBannerFrame(grid [][]rune, w int, owner []int, segs []letterSeg, frame int, animate bool) {
 	rows := len(grid)
 	height := rows + jumpAmp
+	colour := nimcli.Colour(os.Stdout)
 	offsets := make([]int, len(segs))
 	for i := range segs {
 		if animate {
@@ -260,7 +256,7 @@ func renderBannerFrame(grid [][]rune, w int, owner []int, segs []letterSeg, fram
 		for c := 0; c < w; c++ {
 			ch := canvas[r][c]
 			col := ""
-			if ch != ' ' && owner[c] >= 0 {
+			if ch != ' ' && owner[c] >= 0 && colour {
 				if animate {
 					col = shimmer[(frame+owner[c]*2)%len(shimmer)]
 				} else {
@@ -289,7 +285,10 @@ func printVersion(w int) {
 	if pad < 0 {
 		pad = 0
 	}
-	fmt.Printf("%s\033[90m%s\033[0m\n", strings.Repeat(" ", pad), v)
+	if nimcli.Colour(os.Stdout) {
+		v = "\033[90m" + v + "\033[0m"
+	}
+	fmt.Printf("%s%s\n", strings.Repeat(" ", pad), v)
 }
 
 func showBannerThenHelp(body string) {
@@ -302,7 +301,7 @@ func showBannerThenHelp(body string) {
 	printVersion(w)
 	fmt.Print(body)
 
-	if !stdoutTTY() || !stdinTTY() {
+	if !nimcli.Terminal(os.Stdout) || !nimcli.Terminal(os.Stdin) || !nimcli.Colour(os.Stdout) {
 		return
 	}
 	restore := cbreak()
@@ -336,14 +335,6 @@ func showBannerThenHelp(body string) {
 		fmt.Printf("\033[%dB", below)
 		time.Sleep(animDelay)
 	}
-}
-
-func stdinTTY() bool {
-	fi, err := os.Stdin.Stat()
-	if err != nil {
-		return false
-	}
-	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 func cbreak() func() {
@@ -404,6 +395,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&extremelyVerbose, "extremely-verbose", false, "Dump every SQL statement and all psql output")
 	rootCmd.PersistentFlags().StringVar(&cli.AnthropicKey, "anthropic-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&cli.Model, "model", "claude-sonnet-4-6", "Claude model id for AI commands")
+	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Print machine readable JSON instead of the terminal rendering")
 
 	upCmd.Flags().BoolVarP(&upInteractive, "interactive", "i", false, "Choose a stop point from a grouped list of pending files")
 	runCmd.Flags().BoolVarP(&runInteractive, "interactive", "i", false, "Choose a single step or file from a grouped list")
