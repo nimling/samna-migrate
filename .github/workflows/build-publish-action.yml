@@ -99,12 +99,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist
-      - name: Flatten release assets
-        run: |
-          cd dist
-          find . -type f -name 'smig-*' -exec mv {} . \; 2>/dev/null || true
-          find . -type d -mindepth 1 -exec rm -rf {} \; 2>/dev/null || true
-          ls -la
+          merge-multiple: true
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:

@@ -46,10 +46,19 @@ runs:
       shell: bash
       run: |
         if [ -n "${GH_REPO_TOKEN:-}" ]; then git config --global url."https://${GH_REPO_TOKEN}@github.com/".insteadOf "https://github.com/"; fi
-        export GOPRIVATE=github.com/nimling/*
-        go install -ldflags "-X github.com/nimling/samna-migrate/pkg/cli.Version=v${{ inputs.smig-version }}" github.com/nimling/samna-migrate/cmd@v${{ inputs.smig-version }}
-        mv "$(go env GOPATH)/bin/cmd" "$(go env GOPATH)/bin/smig"
-        echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64) asset=smig-linux-amd64 ;;
+          Linux-ARM64) asset=smig-linux-arm64 ;;
+          macOS-X64) asset=smig-darwin-amd64 ;;
+          macOS-ARM64) asset=smig-darwin-arm64 ;;
+          Windows-X64) asset=smig-windows-amd64.exe ;;
+          *) echo "smig has no release binary for ${RUNNER_OS}-${RUNNER_ARCH}" >&2; exit 1 ;;
+        esac
+        bin="${RUNNER_TEMP}/smig/bin"
+        mkdir -p "$bin"
+        curl -fsSL -o "$bin/smig" "https://github.com/nimling/samna-migrate/releases/download/v${{ inputs.smig-version }}/${asset}"
+        chmod +x "$bin/smig"
+        echo "$bin" >> "$GITHUB_PATH"
     - name: Run smig ${{ inputs.command }}
       shell: bash
       run: |
