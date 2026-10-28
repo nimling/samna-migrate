@@ -117,9 +117,16 @@ func runRebaseMirror(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg
 		}
 	}
 
+	absOf, err := apply.AbsPaths(stepsCfg, dbDir)
+	if err != nil {
+		return err
+	}
 	mirrored := 0
 	for _, fp := range targets {
-		abs := dbDir + "/" + fp
+		abs := absOf[fp]
+		if abs == "" {
+			abs = dbDir + "/" + fp
+		}
 		diskSha, err := hash.File(abs)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", fp, err)
