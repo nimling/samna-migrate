@@ -11,7 +11,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 
 ## Two callers
 
-1. The local operator runs `upgrade`, `down`, `rebase`, `merge`, `destroy`. They touch ledger state or the tree. `down` refuses to run in CI.
+1. The local operator runs `upgrade`, `down`, `rebase`, `merge`, `destroy`. They touch ledger state or the tree; `upgrade`, `rebase` and `destroy` ask for the database name before they write.
 2. CI runs `up`. `boot_check` first demands the database match the tree on `schema_version`, `tool_version` and the `yaml_sha256` of `migrate.yml`; anything behind and `up` refuses and asks for a local `upgrade`. Never bypass it by writing `samna_migrate.state`.
 3. Every successful apply stores the raw `.sql` body and its sha256 in `samna_migrate.file` and `samna_migrate.history`, so the deployed bytes can always be diffed against the tree.
 
@@ -54,7 +54,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 5. A consumer justfile with `set dotenv-load` injects that repo's `.env` first, and a variable already set in the process wins over an `--env` file. So `--env=.env.prd` through a `just migrate` recipe is a no op that targets local. Call the binary directly with `--schema` and `--db-dir`.
 6. `smig config get` prints the active config and the layer of every value, secrets masked; `smig config set --to=prd pghost=... pgdatabase=... protected=true` writes a named config at mode 0600, `--local` writes the local `.smig/`, and `config use`, `list`, `init`, `local on|off` and `path` do the rest.
 7. On a `protected` config every write command prints its plan and asks for `yes`, `destroy` and `down` ask for the config name, and a pipe or an mcp call needs `--yes`. `--plan` prints the plan of a write and stops.
-8. Persistent flags: `--schema`, `--db-dir`, `--config`, `--env`, `--global`, `--yes`, `--plan`, `--force`, `-s` or `--silent`, `-v`, `-vv`, `--json`, and `--anthropic-key` and `--model` for `down`.
+8. Persistent flags: `--schema`, `--db-dir`, `--config`, `--env`, `--global`, `--yes`, `--plan`, `--force`, `-s` or `--silent`, `-v`, `-vv`, `--extremely-verbose`, `--json`, and `--anthropic-key` and `--model` for `down`.
 
 ```yaml
 default: local
@@ -83,6 +83,6 @@ configs:
 
 ## mcp
 
-1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint`, `reconcile` and `test` are read only tools, `down` and `destroy` destructive, the rest write.
+1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `config`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint`, `reconcile` and `test` are read only tools, `down` and `destroy` destructive, the rest write.
 2. A tool call runs `smig` in the directory claude was started in, with the same environment, `--env=<file>` layers, local `.smig/` and named config.
 3. Each file `up`, `run` or `rebase` applies is a step; a host that renders MCP Apps shows them live with the result on `ui://smig/run`.
