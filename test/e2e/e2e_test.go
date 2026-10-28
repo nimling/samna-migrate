@@ -266,4 +266,12 @@ func TestSmigRebasePruneFoldsOrphan(t *testing.T) {
 	if nFold < 1 {
 		t.Errorf("expected a fold history row for the orphan")
 	}
+
+	stdout, stderr, err = runSmig(t, "run", "migrations/V2.3__base_get_timeslots.sql")
+	if err != nil {
+		t.Fatalf("run after a fold must not stop on the folded row: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if strings.Contains(stdout+stderr, "step not found") {
+		t.Errorf("a folded row is not a runnable file: %s", stdout+stderr)
+	}
 }

@@ -60,6 +60,7 @@ func ListFiles(ctx context.Context, d *db.DB) ([]Pending, error) {
 		SELECT id, file_path, file_name, step_name, step_type, slug, version,
 		       sha256, size_bytes, position
 		FROM samna_migrate.file
+		WHERE state IN ('pending', 'applied') AND removed_at IS NULL
 		ORDER BY position`)
 	if err != nil {
 		return nil, err
@@ -77,6 +78,23 @@ func ListFiles(ctx context.Context, d *db.DB) ([]Pending, error) {
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+func AbsPaths(stepsCfg *steps.Config, dbDir string) (map[string]string, error) {
+	out := map[string]string{}
+	for _, st := range stepsCfg.Steps {
+		if !st.Active() {
+			continue
+		}
+		files, err := st.ResolveFiles(dbDir)
+		if err != nil {
+			return nil, err
+		}
+		for _, f := range files {
+			out[f.Rel] = f.AbsPath
+		}
+	}
+	return out, nil
 }
 
 // File runs a single file via psql with the step's `pre` SQL prefix. External files record history with a null file_id and leave the ledger untouched.

@@ -56,7 +56,7 @@ Target grammar, shared with `run`: a 1 based number from the list, a `slug:versi
 
 ## run
 
-Runs exactly one step or SQL file, recording the apply in the ledger like `up` does. Same target grammar, where a step slug runs every pending file of that step. `-i` presents the grouped list.
+Runs exactly one step or SQL file, recording the apply in the ledger like `up` does. Same target grammar, where a step slug runs every pending file of that step. `-i` presents the grouped list. The list holds the pending and applied rows whose file is on disk: a folded or removed row is never a target, and an applied row whose file left the tree is warned and skipped, so a fold never stops a `run`.
 
 A path resolving to a SQL file outside the tree is refused unless `--force`, which executes it as an external file recorded with an `external` marker. Use `run` to reapply one seed or push one file ahead of a full `up`. Use `--force` external runs only for one off corrective SQL the user has reviewed.
 
@@ -78,7 +78,7 @@ Rebases live SQL into a staging tree and optionally promotes it.
 
 Mirrors on disk content into `samna_migrate` as deployed truth, reversibly. No arguments mirrors the whole tree, file paths mirror only those. Each mirror snapshots the prior body into a history row with `action_type = 'rebase'`, so `--undo` restores the most recent snapshot and `--undo-id <history_id>` restores a specific one. `--reason` records why. Prompts for the database name.
 
-A path with no ledger row is registered rather than skipped, which is what makes a scoped `rebase` the correct pairing for a file rename.
+A path with no ledger row is registered rather than skipped, which is what makes a scoped `rebase` the correct pairing for a file rename. A file of a git or url include is read from where the include resolved it, so `rebase --prune=<slug>` on an included step mirrors the included files too.
 
 `--prune` makes the ledger describe the current file structure. Every applied entry whose file is absent from the tree is folded, with a `fold` history row, and every file on disk is recorded as applied at its own content. Bare `--prune` covers every step and is the same as `--prune=all`. A value scopes it to one step by type, slug or name, so `--prune=migration` folds the entries a history squash leaves, which is where `up` aborts with `applied but absent from the source tree`, and `--prune=debug_user` narrows to that seed step.
 

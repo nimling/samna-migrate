@@ -60,6 +60,19 @@ var runCmd = &cobra.Command{
 			log.Success("no registered files")
 			return nil
 		}
+		absOf, err := apply.AbsPaths(stepsCfg, dbDir)
+		if err != nil {
+			return err
+		}
+		onDisk := files[:0]
+		for _, f := range files {
+			if absOf[f.FilePath] == "" {
+				log.Warn("  %s applied but missing on disk, not runnable", f.FilePath)
+				continue
+			}
+			onDisk = append(onDisk, f)
+		}
+		files = onDisk
 
 		groups, err := groupPending(files, stepsCfg, dbDir)
 		if err != nil {
