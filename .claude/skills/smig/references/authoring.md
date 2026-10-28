@@ -46,7 +46,7 @@ Files sort by parsed version, component by component, so `V1.2` precedes `V1.10`
 
 ## Identity in the ledger
 
-A file is identified by its path relative to the database directory, at `internal/preflight/preflight.go:57`. There is no rename detection.
+A file is identified by its path relative to the database directory, at `internal/preflight/preflight.go:58`. There is no rename detection.
 
 So a rename, including a folder rename, makes the file new to every server. `up` will apply it again, which for a seed means re executing it. Pair any rename with `rebase <path>...` on each server for the files whose content is already deployed, and leave out only the ones you genuinely want to run.
 

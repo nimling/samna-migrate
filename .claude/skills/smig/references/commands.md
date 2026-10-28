@@ -86,7 +86,7 @@ Use it after folding migrations into a base file, or after renaming files, where
 
 ## down
 
-Local operator only, AI powered, refuses in CI. Walks applied migration rows in descending order and reverts each. Per step it reuses a cached `down_proposal` when present, otherwise calls the Anthropic Messages API to synthesise the down SQL from the forward SQL and current database state, validates it inside a rollback transaction, executes it, and writes a `down` history row pointing at the original apply.
+Local operator only, AI powered. Walks applied migration rows in descending order and reverts each. Per step it reuses a cached `down_proposal` when present, otherwise calls the Anthropic Messages API to synthesise the down SQL from the forward SQL and current database state, validates it inside a rollback transaction, executes it, and writes a `down` history row pointing at the original apply.
 
 Requires `--anthropic-key` or `ANTHROPIC_API_KEY`. `--to <file_path|history_id>` reverts until a target, `--steps N` reverts the N most recent, `--dry-run` prints the proposed SQL without executing. Always dry run first and show the user the SQL.
 
