@@ -9,7 +9,7 @@ paths:
 
 # The smig mcp, its steps and private modules
 
-The cross repo rule is `../.claude/rules/stream.md`; this file names what is smig's own. What the server serves and how its steps report: `.nimpress/mcp.md`. Why the private module needs its own token and how the `latest` tag follows a release: `.nimpress/release.md`.
+The cross repo rule is `~/.claude/rules/stream.md`; this file names what is smig's own. What the server serves and how its steps report: `.nimpress/mcp.md`. Why the private module needs its own token and how the `latest` tag follows a release: `.nimpress/release.md`.
 
 1. `smig mcp` is `internal/migrate/mcp.go` on `cli.MCPCommand` from `nimbody/cli`. Every tool is annotated read, write or destructive; the run page is `ui://smig/run`.
 2. Steps come from `internal/apply/apply.go` `File`: `running` before `d.RunFile`, `done` or `failed` after. Report them only under `stream.Machine()`; in a terminal smig prints its own progress through `internal/log`.

@@ -21,14 +21,20 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | `lint` | no | Static checks on every step file. |
 | `upgrade` | state only | Acknowledge schema and yaml locally so a later `up` passes the boot check. |
 | `up` | yes | Apply pending migrations. The deploy path. |
+| `run` | yes | Run exactly one step or SQL file, recorded in the ledger like `up`. |
 | `reconcile` | no | Diff the local tree against a live server in depth. |
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
-| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune` makes it describe the current file structure, scoped per step. |
-| `skill` | no | Print the claude skill, or install it under `~/.claude/skills/smig`. |
-| `down` | yes | AI assisted revert of applied migrations. Refuses in CI. |
+| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune=<step slug or type>` mirrors the applied rows of that step: folds the ones whose file left the tree and records the ones on disk at the file's content; bare `--prune` is every step. |
+| `down` | yes | AI assisted revert of applied migrations. |
 | `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |
 | `insert` | yes | Insert rows from `<schema>.<table>.json` files back into their tables. |
 | `destroy` | yes | Drop every object the tree creates and reset the ledger. Needs docker. |
+| `test` | no | Run the pgTAP tests on a throwaway postgres built from the tree; `--from=<ref>` also upgrades from that ref. Needs docker. |
+| `config` | no | Print, set, switch and initialise the named and local configs. |
+| `skill` | no | Print the claude skill, or install it under `~/.claude/skills/smig`. |
+| `plugin` | no | Install the Claude Code plugin carrying the skill and the mcp server; `status` reports drift. |
+| `version` | no | Print the build, the `samna_migrate` schema version it carries, the commit and the build time. |
+| `mcp` | no | Serve every command as a tool over stdio. |
 
 ## Targeting an environment
 
@@ -56,11 +62,11 @@ smig insert ./snapshot --env=.env.prd --schema=./database/migrate.yml --db-dir=.
 
 When a migration history is squashed, the migration files are folded into the baseline and deleted from the tree, but the live ledger still carries them as applied. `up` then aborts with `applied but absent from the source tree`.
 
-`rebase --prune` clears exactly that state. It folds every applied migration row whose file is absent from the tree, setting `state = 'folded'` and writing a `fold` history row per entry, and leaves pending files untouched so a following `up` applies the genuinely new migrations.
+`rebase --prune=migration` clears exactly that state, `migration` being the type name of the migrations step. It mirrors the applied rows of that step: every row whose file is absent from the tree is folded, `state = 'folded'` with a `fold` history row per entry, every row whose file is on disk is recorded at that file's content, and pending files are left untouched so a following `up` applies the genuinely new migrations. A slug scopes it to one base or seed step the same way, and bare `--prune` covers every step.
 
 ```sh
 smig reconcile --db --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
-smig rebase --prune --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
+smig rebase --prune=migration --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
 smig up --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
 ```
 

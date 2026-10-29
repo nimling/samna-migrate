@@ -5,7 +5,7 @@ argument-hint: [patch|minor|major]
 allowed-tools: Bash(just *), Bash(git *)
 ---
 
-The release of `github.com/nimling/samna-migrate`, in order, stopping on the first failure with the error verbatim. It needs a git repository with an `origin` remote. Tests are the `test` skill; the standing rules are `.claude/rules/deploy.md`; what consumers do after it is `../.claude/rules/migrations.md`.
+The release of `github.com/nimling/samna-migrate`, in order, stopping on the first failure with the error verbatim. It needs a git repository with an `origin` remote. Tests are the `test` skill; the standing rules are `.claude/rules/deploy.md`; what consumers do after it is `~/.claude/rules/migrations.md`.
 
 ## 1. Tests for the change
 
@@ -38,7 +38,7 @@ The release of `github.com/nimling/samna-migrate`, in order, stopping on the fir
 1. Patch: `just deploy`, which runs `sbump patch --env APP_VERSION --yaml ./action.yml@.inputs.smig-version.default --push-version --auto --workflow`: `APP_VERSION` and the `smig-version` default in `action.yml` together, the tag, the push and the workflow track.
 2. Minor or major: `just deploy minor` or `just deploy major`.
 3. The tag runs `.github/workflows/build-publish-action.yml`; the `latest` tag moves only after a green build, so a failed release leaves consumers on the previous version: `.claude/rules/stream.md` 5. Success is that run green.
-4. Consumers pick it up through `go get github.com/nimling/samna-migrate@vX.Y.Z` and the `action.yml` pin on their runners. Every consumer ledger is then behind and `up` refuses until `smig upgrade` runs: `../.claude/rules/migrations.md` 2.
+4. Consumers pick it up through `go get github.com/nimling/samna-migrate@vX.Y.Z` and the `action.yml` pin on their runners. Every consumer ledger is then behind and `up` refuses until `smig upgrade` runs: `~/.claude/rules/migrations.md` 4.
 
 ## 7. Install locally
 
