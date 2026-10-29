@@ -275,3 +275,64 @@ func TestSmigRebasePruneFoldsOrphan(t *testing.T) {
 		t.Errorf("a folded row is not a runnable file: %s", stdout+stderr)
 	}
 }
+
+func TestSmigRebasePruneFoldsPendingOrphan(t *testing.T) {
+	p := dial(t)
+	defer p.Close()
+	ctx := context.Background()
+	if _, _, err := runSmig(t, "upgrade", "--yes"); err != nil {
+		t.Fatalf("upgrade prep failed: %v", err)
+	}
+
+	const orphan = "migrations/V9999.1__prune_e2e_pending_orphan.sql"
+	if err := execUpgrade(ctx, p, `DELETE FROM samna_migrate.file WHERE file_path = $1`, orphan); err != nil {
+		t.Fatalf("pre-clean orphan: %v", err)
+	}
+	_, err := p.Exec(ctx, `
+		INSERT INTO samna_migrate.file
+		    (step_name, step_type, slug, version, file_name, file_path, sha256, size_bytes, state, position)
+		VALUES ('Migrations', 'migration', 'migration', '9999.1', 'V9999.1__prune_e2e_pending_orphan.sql', $1,
+		        'deadbeef', 0, 'pending',
+		        COALESCE((SELECT MAX(position) FROM samna_migrate.file), 0) + 1)`, orphan)
+	if err != nil {
+		t.Fatalf("insert pending orphan: %v", err)
+	}
+	defer execUpgrade(ctx, p, `DELETE FROM samna_migrate.file WHERE file_path = $1`, orphan)
+
+	stdout, stderr, err := runSmig(t, "up")
+	if err == nil || !strings.Contains(stdout+stderr, "step not found for "+orphan) {
+		t.Fatalf("up must refuse a pending row whose file left the tree: err=%v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	stdout, stderr, err = runSmig(t, "rebase", "--prune=migration", "--yes", "--reason=e2e pending orphan")
+	if err != nil {
+		t.Fatalf("rebase --prune=migration failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout+stderr, "folded") {
+		t.Errorf("expected folded marker: %s", stdout+stderr)
+	}
+
+	var state string
+	if err := p.QueryRow(ctx, `SELECT state FROM samna_migrate.file WHERE file_path = $1`, orphan).Scan(&state); err != nil {
+		t.Fatal(err)
+	}
+	if state != "folded" {
+		t.Errorf("pending orphan state = %q, want folded", state)
+	}
+
+	var notes string
+	if err := p.QueryRow(ctx, `SELECT notes FROM samna_migrate.history WHERE file_path = $1 AND action_type = 'fold' ORDER BY id DESC LIMIT 1`, orphan).Scan(&notes); err != nil {
+		t.Fatalf("expected a fold history row for the pending orphan: %v", err)
+	}
+	if !strings.Contains(notes, "pruned pending orphan") || !strings.Contains(notes, "reason=e2e pending orphan") {
+		t.Errorf("fold notes = %q, want pruned pending orphan with the reason", notes)
+	}
+
+	stdout, stderr, err = runSmig(t, "up")
+	if err != nil {
+		t.Fatalf("up after the fold must proceed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	if strings.Contains(stdout+stderr, "step not found") {
+		t.Errorf("a folded pending row is not resolved by up: %s", stdout+stderr)
+	}
+}
