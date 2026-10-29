@@ -23,7 +23,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 4. Acknowledge a new tool version or an edited `migrate.yml`: `upgrade`.
 5. Deploy: `up`. One step or one file only: `run`.
 6. Divergence between the tree and a live server, or corrective SQL: `reconcile`.
-7. Align the ledger to disk without executing SQL: `rebase`. Describe the current file structure after a fold or a rename: `rebase --prune`, scoped with `--prune=<step>`.
+7. Align the ledger to disk without executing SQL: `rebase <path>`, after a rename or a moved include ref. Fold what a history squash left: `rebase --prune=<step slug or type>`, which mirrors the applied rows of that step; `migration` is the type name for the migrations step.
 8. Pull live SQL back into the tree: `merge`.
 9. Revert applied migrations: `down`. Local only, AI powered, dry run first.
 10. Move table data: `dump` reads, `insert` writes.
@@ -39,7 +39,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 ## Authoring
 
 1. Step types, the `V<version>__<slug>_<name>.sql` filename grammar, and how an include resolves from a folder, a git repo or a url: `references/authoring.md`.
-2. A file's ledger identity is its path relative to the database directory. A rename is a new file to every server; pair it with `rebase --prune` before the next `up`.
+2. A file's ledger identity is its path relative to the database directory. A rename is a new file to every server; pair it with a scoped `rebase <path>` before the next `up`. `--prune` mirrors applied rows only and leaves the new path for `up`.
 
 ## Reconcile
 

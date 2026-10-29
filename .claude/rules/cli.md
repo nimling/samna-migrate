@@ -11,4 +11,4 @@ The cli is built to the `cli` skill in `~/.claude/skills/cli`. This file is what
 3. Output, exit codes, config, credentials and the MCP server come from the shared module. A change to any of them is made there, released, and pinned here; never patched locally.
 4. Release: `just deploy` (sbump). The plugin version moves with it; `smig plugin status` reads clean after install.
 5. Check: `~/.claude/skills/cli/scripts/audit.sh smig` passes before the release.
-   5.1. Still failing: `2 tooling command status exists`; smig has `stat` and no `status`.
+   5.1. The `status` check passes as `status not required, a tool cli with no api login`; smig has `stat` and no `status`.

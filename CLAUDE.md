@@ -1,6 +1,6 @@
 # smig
 
-The `smig` database migration cli every Go service migrates through, Go module `github.com/nimling/samna-migrate`, and the `action.yml` GitHub Action that downloads the pinned release binary onto consumer runners. GitHub `nimling/samna-migrate`. How consumers use it: `../.claude/rules/migrations.md`. Layout and usage: `README.md`.
+The `smig` database migration cli every Go service migrates through, Go module `github.com/nimling/samna-migrate`, and the `action.yml` GitHub Action that downloads the pinned release binary onto consumer runners. GitHub `nimling/samna-migrate`. How consumers use it: `~/.claude/rules/migrations.md`. Layout and usage: `README.md`.
 
 ## Commands
 
@@ -13,7 +13,7 @@ The `smig` database migration cli every Go service migrates through, Go module `
 
 1. `set dotenv-load` in the justfile: every recipe reads `.env`, so a remote database is reached by calling `bin/smig` or the installed `smig` directly with `--env=<file>`.
 2. A `samna_migrate` schema change is a new `internal/upgrade/sql/upgrade_to_<n>.sql`, its `//go:embed` line and `case` in `internal/upgrade/upgrade.go`, and `SchemaVersion` in `pkg/cli/version.go`, in one change.
-3. The smig skill ships inside the binary; a command, flag or verdict change edits `.claude/skills/smig` in the same change.
+3. The smig skill ships inside the binary, embedded by `skill.go` and installed by `smig skill install`; a command, flag or verdict change edits `.claude/skills/smig` in the same change. The repo has no `install-cli-skill` recipe, the gap against `~/.claude/rules/repo.md`.
 
 ## Index
 

@@ -1,6 +1,6 @@
 # Authoring a step file and its SQL
 
-Load this when writing `migrate.yml`, naming a SQL file, or wiring an include that pulls SQL from somewhere else.
+Load this when writing `migrate.yml`, naming a SQL file, or wiring an include that pulls SQL from somewhere else. Where a file goes in a Samna service, which step folder owns it and what a base, migration or seed file may hold is `~/.claude/rules/database.md` The tree and Re runnable SQL; the procedures against a local or a deployed database are `~/.claude/rules/migrations.md`. This file is the tool's grammar: what `smig` parses, resolves, orders and enforces.
 
 ## Step types
 
@@ -17,6 +17,20 @@ A `base` or `seed` step also declares a `slug` naming the area it deploys to. A 
 `Load` rejects a missing or invalid type, a slug on a migration step, and a missing slug on a base or seed step.
 
 A step may carry an `if` shell condition. When it is false the step is skipped and its files are never resolved, so they are never linted and never applied.
+
+## Step keys
+
+Beside `type`, `slug`, `if` and `include`, a step may carry:
+
+1. `pre:` SQL run before every file of the step, inside that file's transaction, so a failure rolls both back. Extensions are created here, never in a file.
+
+2. `vars:` a map of name to value. Each value is expanded through `sh`, so `$VAR` and `$(cmd)` resolve from the env loaded for the run, and the result replaces `:'name'` in every file of the step as a quoted literal.
+
+3. `exclude:` entries of the include shape whose `path` names a file by its base name; a resolved include file of that name is dropped from the step.
+
+4. `schemas:` the schemas the step's files own, `public` when unset. `dump` limits its tables to them, `destroy` drops the declared ones other than `public` with cascade, and `merge` and `reconcile --db` read them to tell which step owns an object.
+
+5. `post:` is parsed and not executed today; `up -v` prints it and nothing runs it.
 
 ## Filename grammar
 
@@ -50,6 +64,8 @@ A file is identified by its path relative to the database directory, at `interna
 
 So a rename, including a folder rename, makes the file new to every server. `up` will apply it again, which for a seed means re executing it. Pair any rename with `rebase <path>...` on each server for the files whose content is already deployed, and leave out only the ones you genuinely want to run.
 
+`rebase --prune=<step slug or type>` is for the other case, a file that left the tree. It mirrors the applied rows of that step, folding the ones whose file is absent and recording the ones on disk at the file's content, and leaves a renamed file's new path for `up`; `migration` is the type name for the migrations step.
+
 ## Include resolution
 
 An include entry resolves from a local folder, a git repo, or a url.
@@ -69,11 +85,13 @@ Every remote field is environment expanded, so `ref: $MIDDLEWARE_VERSION` reads 
 ```yaml
 include:
   - git: git@github.com:nimling/samna-auth-middleware.git
-    ref: v1.1.0-alpha0007
+    ref: $MIDDLEWARE_VERSION
     path: prophet/database
 ```
 
 ## SQL shape
+
+What `lint` enforces. The standard a Samna file follows beyond this is `~/.claude/rules/database.md` Re runnable SQL.
 
 1. No `session_replication_role`. Triggers are the contract.
 
@@ -84,6 +102,8 @@ include:
 4. In migration files, `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` use their idempotent forms.
 
 5. A base or seed file is replayed whenever its sha drifts, so it must be safe to run more than once.
+
+Two meanings of replay: smig replays a drifted base or seed file, point 5; `claimius.replay_mode` is the sync layer's setting on a disciple and unrelated to smig.
 
 ## Tests
 

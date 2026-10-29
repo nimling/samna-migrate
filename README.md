@@ -9,12 +9,12 @@ The CLI binary is `smig`. The help screen animates the smig logo on a terminal a
 ```
 smig up         Apply pending migrations after a strict boot check.
 smig upgrade    Walk the samna_migrate schema chain and reconcile state. Local only.
-smig check      Preflight only. No writes. Reports drift.
+smig check      Preflight. Reports drift; registers unseen files and flips drifted base or seed files to pending.
 smig stat       Print current state and per step file counts.
 smig merge      Rebase live SQL into .upgraded/; --apply moves it in; --revert restores a snapshot.
 smig reconcile  Diff the local folder against the live server as a git diff: --files, --objects, --git, --db sections, --json for machine output.
 smig lint       Static checks on every step file. No database needed.
-smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly.
+smig rebase     Mirror local files into samna_migrate as the deployed truth, reversibly; --prune=<step> folds the entries whose file left the tree.
 smig down       Revert applied migrations with an Anthropic agent that synthesizes the down SQL. Local only.
 smig dump       Dump table data to json, one <schema>.<table>.json per table.
 smig insert     Insert rows from <schema>.<table>.json files back into their tables.
@@ -56,7 +56,7 @@ The database comparison (`--db`) starts a local docker postgres, applies every l
 
 `smig lint` walks every step file and reports filename grammar violations on any step, `session_replication_role` usage, `COMMENT ON FUNCTION` without an argument signature, `CREATE TYPE` without a `pg_type` existence guard, and the non idempotent forms of `CREATE INDEX`, `ADD COLUMN`, and `CREATE FUNCTION` in migration files. Errors exit nonzero; `--strict` promotes warnings. It reads only the files on disk and runs every check every time, no database needed.
 
-`smig rebase` mirrors the local file structure into `samna_migrate` as the deployed truth. With no arguments it mirrors the whole tree; with file paths it mirrors only those files. Each mirror writes the disk sha and body into `samna_migrate.file` and first snapshots the prior body into a history row with `action_type = 'rebase'`, so the change is reversible. `--undo` restores the most recent snapshot for each target file and `--undo-id <history_id>` restores one specific snapshot, both recorded with `action_type = 'rebase_undo'`. The diff between the prior body and the new body shows under `-v`. Confirmation prompts for the database name; `--yes` bypasses.
+`smig rebase` mirrors the local file structure into `samna_migrate` as the deployed truth. With no arguments it mirrors the whole tree; with file paths it mirrors only those files. Each mirror writes the disk sha and body into `samna_migrate.file` and first snapshots the prior body into a history row with `action_type = 'rebase'`, so the change is reversible. `--undo` restores the most recent snapshot for each target file and `--undo-id <history_id>` restores one specific snapshot, both recorded with `action_type = 'rebase_undo'`. The diff between the prior body and the new body shows under `-v`. Confirmation prompts for the database name; `--yes` bypasses. `--prune` makes the ledger describe the current file structure: every applied entry whose file is absent from the tree is folded with a `fold` history row, every applied entry whose file is on disk is recorded at that file's content, and pending entries and files with no entry are left for `up`. Bare `--prune` covers every step; `--prune=<step slug or type>` scopes it to one, so `--prune=migration` folds what a history squash leaves.
 
 Preflight treats a drifted base or seed file as a replay: the row flips back to pending and the next `smig up` applies it again. A drifted applied migration stays fatal. An applied migration missing from disk is fatal; a missing base or seed file warns. This is the sha tamper check, run against `samna_migrate.file` on `check` and `up`.
 
