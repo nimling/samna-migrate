@@ -24,7 +24,7 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | `run` | yes | Run exactly one step or SQL file, recorded in the ledger like `up`. |
 | `reconcile` | no | Diff the local tree against a live server in depth. |
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
-| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune=<step slug or type>` mirrors the applied rows of that step: folds the ones whose file left the tree and records the ones on disk at the file's content; bare `--prune` is every step. |
+| `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune=<step slug or type>` mirrors the applied rows of that step: folds the ones whose file left the tree, pending ones too, and records the ones on disk at the file's content; bare `--prune` is every step. |
 | `down` | yes | AI assisted revert of applied migrations. |
 | `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |
 | `insert` | yes | Insert rows from `<schema>.<table>.json` files back into their tables. |
@@ -62,7 +62,7 @@ smig insert ./snapshot --env=.env.prd --schema=./database/migrate.yml --db-dir=.
 
 When a migration history is squashed, the migration files are folded into the baseline and deleted from the tree, but the live ledger still carries them as applied. `up` then aborts with `applied but absent from the source tree`.
 
-`rebase --prune=migration` clears exactly that state, `migration` being the type name of the migrations step. It mirrors the applied rows of that step: every row whose file is absent from the tree is folded, `state = 'folded'` with a `fold` history row per entry, every row whose file is on disk is recorded at that file's content, and pending files are left untouched so a following `up` applies the genuinely new migrations. A slug scopes it to one base or seed step the same way, and bare `--prune` covers every step.
+`rebase --prune=migration` clears exactly that state, `migration` being the type name of the migrations step. It mirrors the applied rows of that step: every row whose file is absent from the tree is folded, `state = 'folded'` with a `fold` history row per entry, every row whose file is on disk is recorded at that file's content, and pending files on disk are left untouched so a following `up` applies the genuinely new migrations. A pending row whose file left the tree before it was applied is folded too, with `pruned pending orphan` in its history row, since `up` would otherwise stop on it with `step not found`. A slug scopes it to one base or seed step the same way, and bare `--prune` covers every step.
 
 ```sh
 smig reconcile --db --env=.env.prd --schema=./database/migrate.yml --db-dir=./database

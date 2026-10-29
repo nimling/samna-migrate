@@ -42,9 +42,10 @@ each target file; --undo-id <history_id> restores one specific snapshot. The dif
 between the prior body and the new body is shown as a git style diff under -v.
 
 --prune makes samna_migrate describe the current file structure. Every applied
-entry absent from the source tree is folded, and every applied entry whose file
-is on disk is recorded at that file's content; pending entries and files with
-no entry are left for up. Bare --prune covers every step; a value scopes it
+entry absent from the source tree is folded, as is every pending entry whose
+file left the tree before it was applied, and every applied entry whose file
+is on disk is recorded at that file's content; pending files on disk and files
+with no entry are left for up. Bare --prune covers every step; a value scopes it
 to one step by type, slug or name, so --prune=migration folds the entries a
 history squash leaves behind. Confirming the prompt is the statement that the
 local tree is the deployed truth.`,
@@ -387,12 +388,13 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 		sha     string
 		content *string
 		size    int
+		state   string
 	}
 	rows, err := d.Pool.Query(ctx, `
 		SELECT id, file_path, COALESCE(applied_sha256, sha256, ''), applied_sql, COALESCE(size_bytes, 0),
-		       step_type, COALESCE(slug, ''), step_name
+		       state, step_type, COALESCE(slug, ''), step_name
 		FROM samna_migrate.file
-		WHERE state = 'applied' AND removed_at IS NULL
+		WHERE state IN ('applied', 'pending') AND removed_at IS NULL
 		ORDER BY position`)
 	if err != nil {
 		return err
@@ -401,11 +403,13 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 	for rows.Next() {
 		var o orphan
 		var stepType, slug, stepName string
-		if err := rows.Scan(&o.id, &o.path, &o.sha, &o.content, &o.size, &stepType, &slug, &stepName); err != nil {
+		if err := rows.Scan(&o.id, &o.path, &o.sha, &o.content, &o.size, &o.state, &stepType, &slug, &stepName); err != nil {
 			rows.Close()
 			return err
 		}
-		applied[o.path] = true
+		if o.state == "applied" {
+			applied[o.path] = true
+		}
 		if !disk[o.path] && !inactive[stepName] && inScope(rebasePrune, stepType, slug, stepName) {
 			orphans = append(orphans, o)
 		}
@@ -448,6 +452,9 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 			return err
 		}
 		notes := fmt.Sprintf("folded entry absent from source tree reason=%s", rebaseReason)
+		if o.state == "pending" {
+			notes = fmt.Sprintf("pruned pending orphan reason=%s", rebaseReason)
+		}
 		_, err := d.Pool.Exec(ctx, `
 			INSERT INTO samna_migrate.history (file_id, step_name, file_path, file_name, sha256, size_bytes,
 			                                    applied_sql, action_type, tool_version, executed_by, host, database,
@@ -478,7 +485,7 @@ func confirmPrune(cfg *config.Config, files []string) error {
 	if len(files) <= 8 {
 		summary = strings.Join(files, ", ")
 	}
-	fmt.Printf("\nrebase --prune folds applied migration entries that are absent from the source tree.\n  database: %s@%s\n  entries:  %s\n\nType %s to confirm: ",
+	fmt.Printf("\nrebase --prune folds applied and pending entries that are absent from the source tree.\n  database: %s@%s\n  entries:  %s\n\nType %s to confirm: ",
 		cfg.PGDatabase, hostOrLocalhost(cfg), summary, cfg.PGDatabase)
 	reader := bufio.NewReader(os.Stdin)
 	line, err := reader.ReadString('\n')
@@ -541,7 +548,7 @@ func init() {
 	rebaseCmd.Flags().StringVar(&rebaseReason, "reason", "", "Why the files are being mirrored, recorded in history")
 	rebaseCmd.Flags().BoolVar(&rebaseUndo, "undo", false, "Restore the most recent rebase snapshot for each target file")
 	rebaseCmd.Flags().IntVar(&rebaseUndoID, "undo-id", 0, "Restore one specific rebase snapshot by history id")
-	rebaseCmd.Flags().StringVar(&rebasePrune, "prune", "", "Fold entries absent from the source tree and mirror the rest, scoped to a step by type, slug or name; bare --prune means all")
+	rebaseCmd.Flags().StringVar(&rebasePrune, "prune", "", "Fold applied and pending entries absent from the source tree and mirror the applied rest, scoped to a step by type, slug or name; bare --prune means all")
 	rebaseCmd.Flags().Lookup("prune").NoOptDefVal = "all"
 	rootCmd.AddCommand(rebaseCmd)
 }
