@@ -42,8 +42,9 @@ each target file; --undo-id <history_id> restores one specific snapshot. The dif
 between the prior body and the new body is shown as a git style diff under -v.
 
 --prune makes samna_migrate describe the current file structure. Every applied
-entry absent from the source tree is folded, and every file on disk is recorded
-as applied at its own content. Bare --prune covers every step; a value scopes it
+entry absent from the source tree is folded, and every applied entry whose file
+is on disk is recorded at that file's content; pending entries and files with
+no entry are left for up. Bare --prune covers every step; a value scopes it
 to one step by type, slug or name, so --prune=migration folds the entries a
 history squash leaves behind. Confirming the prompt is the statement that the
 local tree is the deployed truth.`,
@@ -361,7 +362,8 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 	host := hostOrLocalhost(cfg)
 	inactive := map[string]bool{}
 	disk := map[string]bool{}
-	var targets []string
+	applied := map[string]bool{}
+	var candidates, targets []string
 	for _, st := range stepsCfg.Steps {
 		if !st.Active() {
 			inactive[st.Name] = true
@@ -374,7 +376,7 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 		for _, f := range files {
 			disk[f.Rel] = true
 			if inScope(rebasePrune, st.Type, st.Slug, st.Name) {
-				targets = append(targets, f.Rel)
+				candidates = append(candidates, f.Rel)
 			}
 		}
 	}
@@ -403,11 +405,17 @@ func runRebasePrune(ctx context.Context, d *db.DB, cfg *config.Config, stepsCfg 
 			rows.Close()
 			return err
 		}
+		applied[o.path] = true
 		if !disk[o.path] && !inactive[stepName] && inScope(rebasePrune, stepType, slug, stepName) {
 			orphans = append(orphans, o)
 		}
 	}
 	rows.Close()
+	for _, p := range candidates {
+		if applied[p] {
+			targets = append(targets, p)
+		}
+	}
 
 	if len(orphans) == 0 {
 		log.Success("no entries absent from the source tree to fold")
