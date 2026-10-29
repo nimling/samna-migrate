@@ -1,6 +1,6 @@
 # smig
 
-The `smig` database migration cli every Go service migrates through, Go module `github.com/nimling/samna-migrate`, and the `action.yml` GitHub Action that downloads the pinned release binary onto consumer runners. GitHub `nimling/samna-migrate`. How consumers use it: `~/.claude/rules/migrations.md`. Layout and usage: `README.md`.
+The `smig` database migration cli every Go service migrates through, Go module `github.com/nimling/samna-migrate`, and the `action.yml` GitHub Action that downloads the pinned release binary onto consumer runners. GitHub `nimling/samna-migrate`. How consumers use it: `~/.claude/rules/migrations.md`.
 
 ## Commands
 
