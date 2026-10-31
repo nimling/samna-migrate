@@ -4,7 +4,7 @@ The release procedure and the bump commands are the `deploy` skill, the test rec
 
 ## Tests
 
-1. Pure logic: `_test.go` beside the code. Postgres paths: `test/integration/`. CLI behaviour: `test/e2e/`. `test/live/` needs `-tags=live` and `ANTHROPIC_API_KEY`, and no recipe runs it.
+1. Pure logic: `_test.go` beside the code. Postgres paths: `test/integration/`. CLI behaviour: `test/e2e/`. `test/live/` needs `-tags=live` and `SMIG_ANTHROPIC_API_KEY`, and no recipe runs it.
 2. `just test` runs `test-go` and `test-docker`. `test-docker` needs docker and builds its fake bookable postgres from `database/smig/Dockerfile`; what it runs: `.nimpress/release.md`. `just test-go` skips docker.
 3. Cover anything that changes exit behaviour, a ledger write, a preflight or reconcile verdict, or a `samna_migrate` schema step.
 

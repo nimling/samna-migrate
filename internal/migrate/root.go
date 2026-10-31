@@ -60,10 +60,10 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 		if !cmd.Flags().Changed("schema") {
-			stepsFile = envDefault("MIGRATE_SCHEMA", stepsFile)
+			stepsFile = envDefault("SMIG_SCHEMA", stepsFile)
 		}
 		if !cmd.Flags().Changed("db-dir") {
-			dbDir = envDefault("DB_DIR", dbDir)
+			dbDir = envDefault("SMIG_DB_DIR", dbDir)
 		}
 		assumeYes, _ = cmd.Flags().GetBool("yes")
 		switch {
@@ -395,14 +395,14 @@ func init() {
 		showBannerThenHelp(buf.String())
 	})
 
-	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", "./database/migrate.yml", "Path to migrate.yml, defaults from MIGRATE_SCHEMA")
-	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", "./database", "Path to database directory, defaults from DB_DIR")
+	rootCmd.PersistentFlags().StringVar(&stepsFile, "schema", "./database/migrate.yml", "Path to migrate.yml, defaults from SMIG_SCHEMA")
+	rootCmd.PersistentFlags().StringVar(&dbDir, "db-dir", "./database", "Path to database directory, defaults from SMIG_DB_DIR")
 	settings.Flags(rootCmd)
 	rootCmd.PersistentFlags().BoolVar(&force, "force", false, "Bypass safety checks where supported")
 	rootCmd.PersistentFlags().BoolVarP(&silent, "silent", "s", false, "Suppress all output except errors")
 	rootCmd.PersistentFlags().CountVarP(&verboseCount, "verbose", "v", "Verbose output, repeat as -vv for extreme")
 	rootCmd.PersistentFlags().BoolVar(&extremelyVerbose, "extremely-verbose", false, "Dump every SQL statement and all psql output")
-	rootCmd.PersistentFlags().StringVar(&cli.AnthropicKey, "anthropic-key", "", "Anthropic API key (or set ANTHROPIC_API_KEY)")
+	rootCmd.PersistentFlags().StringVar(&cli.AnthropicKey, "anthropic-key", "", "Anthropic API key (or set SMIG_ANTHROPIC_API_KEY)")
 	rootCmd.PersistentFlags().StringVar(&cli.Model, "model", "claude-sonnet-4-6", "Claude model id for AI commands")
 	rootCmd.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Print machine readable JSON instead of the terminal rendering")
 

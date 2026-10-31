@@ -78,7 +78,7 @@ An include entry resolves from a local folder, a git repo, or a url.
 
 A git or url include that fails to resolve is a hard error, which stops every command including `lint`.
 
-For https a private repo uses `token`, or `GITHUB_TOKEN` when `token` is unset. For ssh, `key` or `SMIG_SSH_KEY` is a key file path or inline key material with an optional `SMIG_SSH_KEY_PASSWORD`; with no key set smig prefers a default `~/.ssh` key file and falls back to the ssh agent.
+For https a private repo authenticates only with the `token` the include names, such as `token: $GH_REPO_TOKEN`; smig reads no token from anywhere else. For ssh, `key` or `SMIG_SSH_KEY` is a key file path or inline key material with an optional `SMIG_SSH_KEY_PASSWORD`; with no key set smig prefers a default `~/.ssh` key file and falls back to the ssh agent.
 
 Every remote field is environment expanded, so `ref: $MIDDLEWARE_VERSION` reads from the env loaded for the run. Resolution lives in `internal/steps/steps.go`.
 

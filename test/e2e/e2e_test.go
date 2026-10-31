@@ -25,14 +25,14 @@ import (
 func env() map[string]string {
 	port := envOr("PGPORT", "5436")
 	return map[string]string{
-		"PGHOST":         envOr("PGHOST", "localhost"),
-		"PGPORT":         port,
-		"PGUSER":         envOr("PGUSER", "bookable"),
-		"PGPASSWORD":     envOr("PGPASSWORD", "bookable"),
-		"PGDATABASE":     envOr("PGDATABASE", "bookable"),
-		"PGSSLMODE":      "disable",
-		"MIGRATE_SCHEMA": "../../database/smig/migrate.yml",
-		"DB_DIR":         "../../database/smig",
+		"PGHOST":      envOr("PGHOST", "localhost"),
+		"PGPORT":      port,
+		"PGUSER":      envOr("PGUSER", "bookable"),
+		"PGPASSWORD":  envOr("PGPASSWORD", "bookable"),
+		"PGDATABASE":  envOr("PGDATABASE", "bookable"),
+		"PGSSLMODE":   "disable",
+		"SMIG_SCHEMA": "../../database/smig/migrate.yml",
+		"SMIG_DB_DIR": "../../database/smig",
 	}
 }
 

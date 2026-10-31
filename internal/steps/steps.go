@@ -171,18 +171,14 @@ func (inc IncludeEntry) source(dbDir string) (readBase string, identBase string,
 // fetchGit clones a git repo in process with go-git, so no git binary is
 // required, and returns the local path of the requested subfolder. A pinned ref
 // wins; otherwise the branch is used, defaulting to main. All inputs are env
-// expanded. A token, taken from the include or from GITHUB_TOKEN, authenticates
-// https for private repos; an ssh key, taken from the include or from
-// SMIG_SSH_KEY, authenticates ssh urls.
+// expanded. The include's own token authenticates https for private repos; an
+// ssh key, taken from the include or from SMIG_SSH_KEY, authenticates ssh urls.
 func fetchGit(repo, branch, ref, sub, token, sshKey string) (string, string, error) {
 	repo = os.ExpandEnv(repo)
 	branch = strings.TrimSpace(os.ExpandEnv(branch))
 	ref = strings.TrimSpace(os.ExpandEnv(ref))
 	sub = os.ExpandEnv(sub)
 	token = strings.TrimSpace(os.ExpandEnv(token))
-	if token == "" {
-		token = strings.TrimSpace(os.Getenv("GITHUB_TOKEN"))
-	}
 	if branch == "" {
 		branch = "main"
 	}
