@@ -25,8 +25,8 @@ func FromEnv() *Config {
 		PGPassword: os.Getenv("PGPASSWORD"),
 		PGDatabase: os.Getenv("PGDATABASE"),
 		PGSSLMode:  getenv("PGSSLMODE", "disable"),
-		StepsFile:  getenv("SMIG_SCHEMA", "./database/migrate.yml"),
-		DBDir:      getenv("SMIG_DB_DIR", "./database"),
+		StepsFile:  getenv("MIGRATE_SCHEMA", "./database/migrate.yml"),
+		DBDir:      getenv("DB_DIR", "./database"),
 	}
 }
 

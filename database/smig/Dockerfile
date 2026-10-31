@@ -30,8 +30,8 @@ ENV PGUSER=${APP_NAME}
 ENV PGPASSWORD=${APP_NAME}
 ENV PGDATABASE=${APP_NAME}
 ENV PGSSLMODE=disable
-ENV SMIG_DB_DIR=/database
-ENV SMIG_SCHEMA=/database/migrate.yml
+ENV DB_DIR=/database
+ENV MIGRATE_SCHEMA=/database/migrate.yml
 
 RUN apk add --no-cache yq
 

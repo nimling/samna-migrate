@@ -23,7 +23,7 @@ The tests of the smig cli through its `justfile`. Driving smig is the `smig` ski
 
 ## Not run here
 
-1. `test/live/` needs `-tags=live` and `SMIG_ANTHROPIC_API_KEY`, and no recipe runs it.
+1. `test/live/` needs `-tags=live` and `ANTHROPIC_API_KEY`, and no recipe runs it.
 2. `smig test`, the command this cli ships, is never run as part of testing in any repo, this one included: `../.claude/rules/platform.md` Testing 2.
 3. The comments in `test/e2e/e2e_test.go` name `just build-db-smig` and `just build-db-shell`; neither recipe exists, and `database/shell` has no recipe.
 

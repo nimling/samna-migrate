@@ -13,11 +13,11 @@ import (
 
 // TestLiveAnthropicPing hits the real Anthropic Messages API with a minimal
 // request to verify the configured key and model are accepted. Costs one
-// inference call. Skipped unless SMIG_ANTHROPIC_API_KEY is set AND -tags=live.
+// inference call. Skipped unless ANTHROPIC_API_KEY is set AND -tags=live.
 func TestLiveAnthropicPing(t *testing.T) {
-	key := os.Getenv("SMIG_ANTHROPIC_API_KEY")
+	key := os.Getenv("ANTHROPIC_API_KEY")
 	if key == "" {
-		t.Skip("SMIG_ANTHROPIC_API_KEY not set")
+		t.Skip("ANTHROPIC_API_KEY not set")
 	}
 	model := os.Getenv("ANTHROPIC_MODEL")
 	if model == "" {

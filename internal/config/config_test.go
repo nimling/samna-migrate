@@ -5,7 +5,7 @@ import (
 )
 
 func TestFromEnvDefaults(t *testing.T) {
-	keys := []string{"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE", "PGSSLMODE", "SMIG_SCHEMA", "SMIG_DB_DIR"}
+	keys := []string{"PGHOST", "PGPORT", "PGUSER", "PGPASSWORD", "PGDATABASE", "PGSSLMODE", "MIGRATE_SCHEMA", "DB_DIR"}
 	for _, k := range keys {
 		t.Setenv(k, "")
 	}
@@ -30,8 +30,8 @@ func TestFromEnvOverride(t *testing.T) {
 	t.Setenv("PGUSER", "alice")
 	t.Setenv("PGDATABASE", "bookable")
 	t.Setenv("PGSSLMODE", "require")
-	t.Setenv("SMIG_SCHEMA", "/tmp/migrate.yml")
-	t.Setenv("SMIG_DB_DIR", "/tmp/db")
+	t.Setenv("MIGRATE_SCHEMA", "/tmp/migrate.yml")
+	t.Setenv("DB_DIR", "/tmp/db")
 
 	cfg := FromEnv()
 	if cfg.PGHost != "db.example.com" {

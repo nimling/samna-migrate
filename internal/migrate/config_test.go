@@ -79,13 +79,13 @@ func TestNamedConfigSetsSchema(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("HOME", dir)
 	t.Chdir(dir)
-	t.Setenv("SMIG_SCHEMA", "")
-	os.Unsetenv("SMIG_SCHEMA")
+	t.Setenv("MIGRATE_SCHEMA", "")
+	os.Unsetenv("MIGRATE_SCHEMA")
 	runConfig(t, "config", "set", "--to=tst", "migrate_schema=./db/steps.yml", "pghost=tst.example")
 	runConfig(t, "config", "get", "--config=tst")
 	if stepsFile != "./db/steps.yml" {
 		t.Errorf("schema: got %q", stepsFile)
 	}
-	os.Unsetenv("SMIG_SCHEMA")
+	os.Unsetenv("MIGRATE_SCHEMA")
 	os.Unsetenv("PGHOST")
 }

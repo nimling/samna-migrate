@@ -47,7 +47,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 
 ## Connection
 
-1. `smig` reads `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`, plus `SMIG_SCHEMA`, `SMIG_DB_DIR`, `SMIG_SSH_KEY`, `SMIG_SSH_KEY_PASSWORD` and `SMIG_ANTHROPIC_API_KEY`. A private https include authenticates only with the `token` it names. The config is `cli.Settings` from `nimbody/cli`, wired in `internal/migrate/config.go`.
+1. `smig` reads `PGHOST`, `PGPORT`, `PGUSER`, `PGPASSWORD`, `PGDATABASE`, `PGSSLMODE`, plus `MIGRATE_SCHEMA`, `DB_DIR`, `SMIG_SSH_KEY`, `SMIG_SSH_KEY_PASSWORD` and `ANTHROPIC_API_KEY`. A private https include authenticates only with the `token` it names. The config is `cli.Settings` from `nimbody/cli`, wired in `internal/migrate/config.go`.
 2. Each value resolves the flag, the process environment, `--env=<file>` dotenv layers, a local `.smig/config.yaml` found walking up from the working directory, then the named config in `~/.smig/config.yaml` picked by `--config=<name>`, `SMIG_CONFIG`, the local `use:`, then `default:`. An `--env` file loads every key in it, not only the ones above, so `migrate.yml` expansions such as `$SAUTH_DEBUG_USER_ID` read it; `--env` repeats and a later file wins.
 3. A local `.smig/` takes over until `--global` or `smig config local off`, and never holds a secret: `pgpassword`, `ssh_key`, `ssh_key_password` and `anthropic_api_key` live in `~/.smig/config.yaml`.
 4. Every long value flag takes its value with an equals sign: `--env=.env.prd`, `--config=prd`, `--to=prd`, never `--env .env.prd`. The spaced form is rejected by `requireEqualsFlags` in `internal/migrate/root.go`.

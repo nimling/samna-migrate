@@ -40,7 +40,7 @@ For each step:
   - Mark the file row state='reverted' and write a history row with action_type='down'
     and undoing_history_id pointing back at the original apply row.
 
-Requires --anthropic-key or the SMIG_ANTHROPIC_API_KEY env var.
+Requires --anthropic-key or the ANTHROPIC_API_KEY env var.
 `,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
@@ -49,10 +49,10 @@ Requires --anthropic-key or the SMIG_ANTHROPIC_API_KEY env var.
 		cfg.DBDir = dbDir
 		key := cli.AnthropicKey
 		if key == "" {
-			key = os.Getenv("SMIG_ANTHROPIC_API_KEY")
+			key = os.Getenv("ANTHROPIC_API_KEY")
 		}
 		if key == "" {
-			return fmt.Errorf("missing --anthropic-key or SMIG_ANTHROPIC_API_KEY")
+			return fmt.Errorf("missing --anthropic-key or ANTHROPIC_API_KEY")
 		}
 		if downTo == "" && downSteps == 0 {
 			return fmt.Errorf("specify --to <file_path|id> or --steps <n>")
