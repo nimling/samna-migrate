@@ -1,7 +1,15 @@
+# syntax=docker/dockerfile:1
 FROM golang:1.25-alpine AS smig-build
+RUN apk add --no-cache git
+ENV GOPRIVATE=github.com/nimling/*
+ENV GOSUMDB=off
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=secret,id=gh_token,required=true \
+    GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.https://$(cat /run/secrets/gh_token):x-oauth-basic@github.com/.insteadOf" \
+    GIT_CONFIG_VALUE_0="https://github.com/" \
+    go mod download
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY pkg/ ./pkg/

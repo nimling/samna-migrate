@@ -36,7 +36,7 @@ test-docker name="": build
     trap 'docker rm -f {{DB_NAME}} >/dev/null 2>&1 || true; docker volume rm {{DB_NAME}}-data >/dev/null 2>&1 || true' EXIT
     docker rm -f {{DB_NAME}} >/dev/null 2>&1 || true
     docker volume rm {{DB_NAME}}-data >/dev/null 2>&1 || true
-    docker build --build-arg APP_NAME=bookable --build-arg PGPORT=5432 -f database/smig/Dockerfile -t {{DB_IMAGE}} .
+    docker build --build-arg APP_NAME=bookable --build-arg PGPORT=5432 --secret id=gh_token,env=GH_REPO_TOKEN -f database/smig/Dockerfile -t {{DB_IMAGE}} .
     docker volume create {{DB_NAME}}-data >/dev/null
     docker run -d --name {{DB_NAME}} -p {{DB_PORT}}:5432 -e SAUTH_APP_SLUG=bookable -v {{DB_NAME}}-data:/var/lib/postgresql/data {{DB_IMAGE}} >/dev/null
     for i in $(seq 1 150); do docker exec {{DB_NAME}} pg_isready -h 127.0.0.1 -U bookable >/dev/null 2>&1 && break; sleep 2; done
