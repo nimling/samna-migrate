@@ -5,7 +5,7 @@ The `smig` database migration cli every Go service migrates through, Go module `
 ## Commands
 
 1. `just build`: `bin/smig` with the version ldflags from `.env` `APP_VERSION` or `git describe`.
-2. `just install`: `just build`, then `GOPATH/bin/smig`.
+2. `just install`: `scripts/install.sh` checks `go` against `go.mod`, `just`, `git`, `gh`, `docker` and `sbump` with their versions and installs the one missing or below its pin, then `go mod download`, `just build` and `GOPATH/bin/smig`.
 3. `just test [TestName]`: `test-go` then `test-docker`; `just test-go` is `go test ./...` without docker; `just test-docker` builds the fake bookable postgres from `database/smig/Dockerfile` and runs `test/e2e` and `test/integration`.
 4. `just deploy [patch|minor|major]`: `sbump` moves `APP_VERSION` and `.inputs.smig-version.default` in `action.yml`, tags, pushes and tracks `build-publish-action.yml`.
 
