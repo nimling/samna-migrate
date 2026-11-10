@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/nimling/samna-migrate/internal/apply"
@@ -35,11 +37,35 @@ var runCmd = &cobra.Command{
 			return err
 		}
 		defer d.Close()
-		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
-			return err
+
+		target := ""
+		if len(args) == 1 {
+			target = args[0]
 		}
+
+		executedBy := cfg.PGUser
+		host := cfg.PGHost
+		if host == "" {
+			host = "localhost"
+		}
+
 		stepsCfg, err := steps.Load(stepsFile)
 		if err != nil {
+			return err
+		}
+		absOf, err := apply.AbsPaths(stepsCfg, dbDir)
+		if err != nil {
+			return err
+		}
+		if abs, ok := externalTarget(target, stepsCfg, absOf, dbDir, stepsFile); ok {
+			if !force {
+				return fmt.Errorf("external SQL %s requires --force", abs)
+			}
+			log.Header(fmt.Sprintf("migrate run: %s", cfg.PGDatabase))
+			return runExternal(ctx, d, abs, dbDir, cfg.PGDatabase, executedBy, host)
+		}
+
+		if err := bootCheck(ctx, d, stepsFile, dbDir, cli.Version); err != nil {
 			return err
 		}
 		snap, err := schema.Snapshot(ctx, d, stepsFile)
@@ -60,10 +86,6 @@ var runCmd = &cobra.Command{
 			log.Success("no registered files")
 			return nil
 		}
-		absOf, err := apply.AbsPaths(stepsCfg, dbDir)
-		if err != nil {
-			return err
-		}
 		onDisk := files[:0]
 		for _, f := range files {
 			if absOf[f.FilePath] == "" {
@@ -80,19 +102,7 @@ var runCmd = &cobra.Command{
 		}
 		ordered := flatten(groups)
 
-		target := ""
-		if len(args) == 1 {
-			target = args[0]
-		}
-
-		executedBy := cfg.PGUser
-		host := cfg.PGHost
-		if host == "" {
-			host = "localhost"
-		}
-
 		var idxs []int
-		extAbs := ""
 		if runInteractive && target == "" {
 			sel, tok, perr := promptRun(os.Stdin, ordered)
 			if perr != nil {
@@ -116,16 +126,9 @@ var runCmd = &cobra.Command{
 					}
 				}
 				if len(idxs) == 0 {
-					if !force {
-						return fmt.Errorf("external SQL %s requires --force", abs)
-					}
-					extAbs = abs
+					return rerr
 				}
 			}
-		}
-
-		if extAbs != "" {
-			return runExternal(ctx, d, extAbs, dbDir, cfg.PGDatabase, executedBy, host)
 		}
 
 		rightEdge := 0
@@ -180,6 +183,35 @@ func resolvePath(target, dbDir, stepsFile string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+func externalTarget(target string, stepsCfg *steps.Config, absOf map[string]string, dbDir, stepsFile string) (string, bool) {
+	t := strings.TrimSpace(target)
+	if t == "" {
+		return "", false
+	}
+	if _, err := strconv.Atoi(t); err == nil {
+		return "", false
+	}
+	abs, ok := resolvePath(t, dbDir, stepsFile)
+	if !ok {
+		return "", false
+	}
+	slug, ver, hasVer := strings.Cut(t, ":")
+	for rel, fAbs := range absOf {
+		if a, aerr := filepath.Abs(fAbs); (aerr == nil && a == abs) || rel == t || strings.EqualFold(filepath.Base(rel), t) {
+			return "", false
+		}
+		if fv, fs, _, pok := steps.ParseFilename(filepath.Base(rel)); hasVer && pok && strings.EqualFold(fs, slug) && fv == ver {
+			return "", false
+		}
+	}
+	for _, st := range stepsCfg.Steps {
+		if st.Active() && strings.EqualFold(st.Slug, t) {
+			return "", false
+		}
+	}
+	return abs, true
 }
 
 func fileExists(p string) bool {

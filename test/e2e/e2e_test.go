@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/nimling/samna-migrate/pkg/cli"
@@ -334,5 +335,79 @@ func TestSmigRebasePruneFoldsPendingOrphan(t *testing.T) {
 	}
 	if strings.Contains(stdout+stderr, "step not found") {
 		t.Errorf("a folded pending row is not resolved by up: %s", stdout+stderr)
+	}
+}
+
+func ledgerFingerprint(t *testing.T, p *pgxpool.Pool) map[string]string {
+	t.Helper()
+	ctx := context.Background()
+	rows, err := p.Query(ctx, `
+		SELECT table_name FROM information_schema.tables
+		WHERE table_schema = 'samna_migrate' AND table_type = 'BASE TABLE'
+		ORDER BY table_name`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables := []string{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		tables = append(tables, n)
+	}
+	rows.Close()
+	out := map[string]string{}
+	for _, tbl := range tables {
+		var sum string
+		q := fmt.Sprintf(`SELECT count(*)::text || ':' || md5(COALESCE(string_agg(t::text, ',' ORDER BY t::text), '')) FROM samna_migrate.%q t`, tbl)
+		if err := p.QueryRow(ctx, q).Scan(&sum); err != nil {
+			t.Fatalf("fingerprint samna_migrate.%s: %v", tbl, err)
+		}
+		out[tbl] = sum
+	}
+	return out
+}
+
+func TestSmigRunExternalLeavesNoTrace(t *testing.T) {
+	p := dial(t)
+	defer p.Close()
+	ctx := context.Background()
+	if _, _, err := runSmig(t, "upgrade", "--yes"); err != nil {
+		t.Fatalf("upgrade prep failed: %v", err)
+	}
+
+	marker := fmt.Sprintf("smig e2e external %d", time.Now().UnixNano())
+	sql := filepath.Join(t.TempDir(), "smig_e2e_external.sql")
+	if err := os.WriteFile(sql, []byte(fmt.Sprintf("COMMENT ON TABLE public.bookable IS '%s';\n", marker)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, stderr, err := runSmig(t, "run", sql)
+	if err == nil || !strings.Contains(stdout+stderr, "requires --force") {
+		t.Fatalf("external run without --force must refuse: err=%v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+
+	before := ledgerFingerprint(t, p)
+	stdout, stderr, err = runSmig(t, "run", "--force", sql)
+	if err != nil {
+		t.Fatalf("external run failed: %v\nstdout: %s\nstderr: %s", err, stdout, stderr)
+	}
+	after := ledgerFingerprint(t, p)
+
+	var got *string
+	if err := p.QueryRow(ctx, `SELECT obj_description('public.bookable'::regclass, 'pg_class')`).Scan(&got); err != nil {
+		t.Fatal(err)
+	}
+	if got == nil || *got != marker {
+		t.Fatalf("external SQL did not run: comment=%v", got)
+	}
+	if len(before) != len(after) {
+		t.Errorf("samna_migrate tables changed: before=%d after=%d", len(before), len(after))
+	}
+	for tbl, sum := range before {
+		if after[tbl] != sum {
+			t.Errorf("samna_migrate.%s changed by an external run: before=%s after=%s", tbl, sum, after[tbl])
+		}
 	}
 }

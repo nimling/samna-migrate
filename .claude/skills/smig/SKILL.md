@@ -21,7 +21,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 2. Would `up` apply cleanly: `check`. It writes, see Check writes below.
 3. Filenames and SQL shape with no database: `lint`.
 4. Acknowledge a new tool version or an edited `migrate.yml`: `upgrade`.
-5. Deploy: `up`. One step or one file only: `run`.
+5. Deploy: `up`. One step or one file only: `run`. One off corrective SQL outside the tree, with no trace in `samna_migrate`: `run --force <path>`.
 6. Divergence between the tree and a live server, or corrective SQL: `reconcile`.
 7. Align the ledger to disk without executing SQL: `rebase <path>`, after a rename or a moved include ref. Fold what a history squash left: `rebase --prune=<step slug or type>`, which mirrors the applied rows of that step and also folds a pending row whose file left the tree before it was applied; `migration` is the type name for the migrations step.
 8. Pull live SQL back into the tree: `merge`.

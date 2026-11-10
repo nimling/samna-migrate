@@ -56,9 +56,9 @@ Target grammar, shared with `run`: a 1 based number from the list, a `slug:versi
 
 ## run
 
-Runs exactly one step or SQL file, recording the apply in the ledger like `up` does. Same target grammar, where a step slug runs every pending file of that step. `-i` presents the grouped list. The list holds the pending and applied rows whose file is on disk: a folded or removed row is never a target, and an applied row whose file left the tree is warned and skipped, so a fold never stops a `run`.
+Runs exactly one step or SQL file of the tree, recording the apply in the ledger like `up` does. Same target grammar, where a step slug runs every pending file of that step. `-i` presents the grouped list. The list holds the pending and applied rows whose file is on disk: a folded or removed row is never a target, and an applied row whose file left the tree is warned and skipped, so a fold never stops a `run`.
 
-A path resolving to a SQL file outside the tree is refused unless `--force`, which executes it as an external file recorded with an `external` marker. Use `run` to reapply one seed or push one file ahead of a full `up`. Use `--force` external runs only for one off corrective SQL the user has reviewed.
+A path resolving to a SQL file outside the tree is refused unless `--force`, which executes it as an external file and writes nothing to `samna_migrate`: no boot check, no preflight, no requirement, file or history row, and the schema is not created when it is missing. Use `run` to reapply one seed or push one file ahead of a full `up`. Use `--force` external runs only for one off corrective SQL the user has reviewed.
 
 ## reconcile
 

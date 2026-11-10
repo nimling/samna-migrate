@@ -97,7 +97,7 @@ func AbsPaths(stepsCfg *steps.Config, dbDir string) (map[string]string, error) {
 	return out, nil
 }
 
-// File runs a single file via psql with the step's `pre` SQL prefix. External files record history with a null file_id and leave the ledger untouched.
+// File runs a single file via psql with the step's `pre` SQL prefix. External files write nothing to samna_migrate.
 func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolVersion, executedBy, host, database string, external bool) error {
 	abs := ""
 	if st != nil {
@@ -161,15 +161,14 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		report(step)
 	}
 
+	if external {
+		return runErr
+	}
+
 	var attempt int
 	_ = d.Pool.QueryRow(ctx, `SELECT attempt_count + 1 FROM samna_migrate.file WHERE id = $1`, p.ID).Scan(&attempt)
 	if attempt == 0 {
 		attempt = 1
-	}
-
-	actionType := "apply"
-	if external {
-		actionType = "external"
 	}
 
 	var histID int
@@ -179,24 +178,17 @@ func File(ctx context.Context, d *db.DB, p Pending, st *steps.Step, dbDir, toolV
 		     sha256, size_bytes, attempt, action_type, tool_version,
 		     executed_by, host, database, duration_ms, success, error_message,
 		     started_at, ended_at, position, yaml_sha256, applied_sql, applied_commit, applied_at)
-		VALUES (NULLIF($1, 0), $2, $3, $4, $5, $6, $7, $8, $9, $10, $24, $11,
+		VALUES (NULLIF($1, 0), $2, $3, $4, $5, $6, $7, $8, $9, $10, 'apply', $11,
 		        $12, $13, $14, $15, $16, NULLIF($17, ''),
 		        $18, $19, $20, NULLIF($21, ''), $22, NULLIF($23, ''), now())
 		RETURNING id`,
 		p.ID, p.StepName, p.StepType, p.Slug, p.Version, p.FileName, p.FilePath,
 		p.Sha, p.Size, attempt, toolVersion,
 		executedBy, host, database, durMs, success, errMsg,
-		start, end, p.Position, yamlSha, content, commit, actionType,
+		start, end, p.Position, yamlSha, content, commit,
 	).Scan(&histID)
 	if err != nil {
 		return fmt.Errorf("write history: %w", err)
-	}
-
-	if external {
-		if success {
-			return nil
-		}
-		return runErr
 	}
 
 	if success {
