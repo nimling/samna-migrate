@@ -9,7 +9,7 @@ func init() {
 	rootCmd.AddCommand(nimcli.PluginCommand(nimcli.Plugin{
 		Name:        "smig",
 		Owner:       "nimling",
-		Description: rootCmd.Short,
+		Description: "Run, reconcile and fold database migrations from any repo: the smig and smig-reconcile skills and an mcp server exposing every command as a tool.",
 		Tree:        skillTree,
 		Version:     func() string { return cli.Version },
 	}))

@@ -44,6 +44,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 ## Reconcile
 
 1. The four sections, the JSON field contract, and turning that JSON into corrective SQL: `references/reconcile.md`.
+2. Reconciling a database against the tree and folding `migrations/` into `base/`: the `smig-reconcile` skill.
 
 ## Connection
 

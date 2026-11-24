@@ -15,6 +15,7 @@ COPY internal/ ./internal/
 COPY pkg/ ./pkg/
 COPY skill.go ./
 COPY .claude/skills/smig/ ./.claude/skills/smig/
+COPY .claude/skills/smig-reconcile/ ./.claude/skills/smig-reconcile/
 RUN CGO_ENABLED=0 go build -o /smig ./cmd
 
 FROM postgres:17-alpine

@@ -13,13 +13,14 @@ The `smig` database migration cli every Go service migrates through, Go module `
 
 1. `set dotenv-load` in the justfile: every recipe reads `.env`, so a remote database is reached by calling `bin/smig` or the installed `smig` directly with `--env=<file>`.
 2. A `samna_migrate` schema change is a new `internal/upgrade/sql/upgrade_to_<n>.sql`, its `//go:embed` line and `case` in `internal/upgrade/upgrade.go`, and `SchemaVersion` in `pkg/cli/version.go`, in one change.
-3. The smig skill ships inside the binary, embedded by `skill.go` and installed by `smig skill install`; a command, flag or verdict change edits `.claude/skills/smig` in the same change. The repo has no `install-cli-skill` recipe, the gap against `~/.claude/rules/repo.md`.
+3. The smig and smig-reconcile skills ship inside the binary, embedded by `skill.go` and installed by `smig skill install` and `smig plugin install`; a command, flag or verdict change edits `.claude/skills/smig` (and `smig-reconcile` where the procedure changes) in the same change. The repo has no `install-cli-skill` recipe, the gap against `~/.claude/rules/repo.md`.
 
 ## Index
 
 1. `.claude/rules/deploy.md`, always: where tests go, the schema chain under `internal/upgrade/sql/`, the embedded skill and the release constraints.
 2. `.claude/rules/stream.md`, path scoped to `internal/migrate/`, `internal/apply/`, `internal/log/`, `.github/workflows/` and `action.yml`: the smig mcp, its steps, the private module token and how `action.yml` installs the binary.
 3. `.claude/skills/smig`: the smig skill, embedded by `skill.go`, exposed at the workspace as `../.claude/skills/smig`; use when running or explaining any smig command or authoring a migration.
+3.1. `.claude/skills/smig-reconcile`: the reconcile and fold procedure, embedded beside it; use when reconciling a database against the tree or folding `migrations/` into `base/`.
 4. `.claude/skills/deploy`: use when the user says deploy, release or ship in this repo.
 5. `.claude/skills/test`: use when testing a change: `just test`, `just test-go`, `just test-docker`, and what no recipe runs.
 6. `.claude/skills/run`: use when building, installing or trying this checkout's smig against the fake bookable postgres.

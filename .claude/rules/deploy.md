@@ -14,7 +14,7 @@ A change under `internal/upgrade/sql/` adds `upgrade_to_<n>.sql`, wires it into 
 
 ## Skill
 
-`.claude/skills/smig` is embedded into the binary by `skill.go` and installed by `smig skill install`. Edit it with the code it describes; it ships in the next release. The workspace reads it through the symlink `../.claude/skills/smig`.
+`.claude/skills/smig` and `.claude/skills/smig-reconcile` are embedded into the binary by `skill.go`, installed by `smig skill install` and carried by `smig plugin install`. Edit it with the code it describes; it ships in the next release. The workspace reads it through the symlink `../.claude/skills/smig`.
 
 ## Releasing
 
