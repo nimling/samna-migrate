@@ -26,7 +26,7 @@ Running and explaining every `smig` command and authoring the files it applies. 
 7. Align the ledger to disk without executing SQL: `rebase <path>`, after a rename or a moved include ref. Fold what a history squash left: `rebase --prune=<step slug or type>`, which mirrors the applied rows of that step and also folds a pending row whose file left the tree before it was applied; `migration` is the type name for the migrations step.
 8. Pull live SQL back into the tree: `merge`.
 9. Revert applied migrations: `down`. Local only, AI powered, dry run first.
-10. Move table data: `dump` reads, `insert` writes.
+10. Move table data: `dump` reads into json, jsonl, csv or sql, `insert` writes them back; `insert --mode=upsert|merge|skip|create|latest|replace` corrects rows that already exist by primary key, `--plan` shows the counts first.
 11. Tear the tree's objects out of a server: `destroy`. Dry run first, always.
 12. Prove the tree with pgTAP against a throwaway database, fresh and upgraded from a ref: `test`; scaffold a file with `test new`. Needs docker, touches no server.
 13. Every flag and the target grammar per command: `references/commands.md`.
@@ -80,10 +80,10 @@ configs:
 4. Never run `destroy` without `--dry-run` first and explicit confirmation, and never when the dry run reports build errors.
 5. Run write commands with the same env as the real deploy. A wrong `PGDATABASE` writes to the wrong server.
 6. Run `stat` before any write, and remember `check` writes.
-7. `insert` writes rows; confirm `PGDATABASE` first.
+7. `insert` writes rows; confirm `PGDATABASE` first, and run it with `--plan` before a run against a deployed database. `--mode=replace` deletes every row the file lacks.
 
 ## mcp
 
-1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `config`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint`, `reconcile` and `test` are read only tools, `down` and `destroy` destructive, the rest write.
+1. `smig mcp` serves every command but `mcp`, `skill`, `plugin`, `completion`, `config`, `version` and `help` as a tool over stdio, named by its path, positional arguments as `args`, flags as `flags`. `stat`, `lint`, `reconcile` and `test` are read only tools, `down`, `destroy` and `insert` destructive, the rest write.
 2. A tool call runs `smig` in the directory claude was started in, with the same environment, `--env=<file>` layers, local `.smig/` and named config.
 3. Each file `up`, `run` or `rebase` applies is a step; a host that renders MCP Apps shows them live with the result on `ui://smig/run`.

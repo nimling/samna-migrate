@@ -132,7 +132,7 @@ func TestTableFormatting(t *testing.T) {
 	if tbl.Quoted() != `"public"."bookable"` {
 		t.Errorf("Quoted = %q", tbl.Quoted())
 	}
-	if tbl.FileName() != "public.bookable.json" {
-		t.Errorf("FileName = %q", tbl.FileName())
+	if tbl.FileName(FormatJSON) != "public.bookable.json" {
+		t.Errorf("FileName = %q", tbl.FileName(FormatJSON))
 	}
 }

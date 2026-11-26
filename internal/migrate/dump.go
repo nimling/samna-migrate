@@ -17,23 +17,50 @@ import (
 )
 
 var (
-	dumpAll    bool
-	dumpTables []string
-	dumpOut    string
+	dumpAll       bool
+	dumpTables    []string
+	dumpOut       string
+	dumpFormat    string
+	dumpMode      string
+	dumpUpdatedAt string
 )
 
 var dumpCmd = &cobra.Command{
 	Use:   "dump",
-	Short: "Dump table data to JSON, one file per table",
-	Long: `Writes the rows of each selected table to <schema>.<table>.json in the output
+	Short: "Dump table data to json, jsonl, csv or sql, one file per table",
+	Long: `Writes the rows of each selected table to <schema>.<table>.<format> in the output
 directory. Tables are limited to the base tables in the schemas declared by
 migrate.yml.
 
 With --all every such table is dumped. With --table=<schema.table>, repeatable and
 comma joined, a subset is dumped. With neither, an interactive list lets you pick
-tables with the arrow keys and space, then asks for the output path.`,
+tables with the arrow keys and space, then asks for the output path.
+
+--format picks the file: json (default) one pretty printed array, jsonl one object
+per line, csv a header of column names then one row per line, sql INSERT statements
+of up to 1000 rows each with every value quoted and cast to its column type. Rows
+are ordered the same way in every format; jsonl, csv and sql stream from the server.
+
+--mode shapes the sql format only, as smig insert reads the same mode: insert plain
+INSERT, upsert and merge ON CONFLICT (<primary key>) DO UPDATE of every other column
+where the row differs, skip ON CONFLICT DO NOTHING, latest DO UPDATE where the dumped
+update time is later, replace the upsert statements then a DELETE of every row the
+dump lacks. create has no sql form. A sql dump is applied by smig insert in one
+transaction.`,
+	Example: `  smig dump --table=public.person --format=jsonl --out=./snapshot
+  smig dump --all --format=sql --mode=upsert --out=./snapshot --env=.env.tst`,
+	Annotations: map[string]string{"mcp": "write"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
+		if !validFormat(dumpFormat) {
+			return nimcli.Rejected(fmt.Sprintf("--format is %s, not %s", strings.Join(data.Formats, ", "), dumpFormat), "")
+		}
+		if !data.ValidMode(dumpMode) {
+			return nimcli.Rejected(fmt.Sprintf("--mode is %s, not %s", strings.Join(data.Modes, ", "), dumpMode), "")
+		}
+		if cmd.Flags().Changed("mode") && dumpFormat != data.FormatSQL {
+			return nimcli.Rejected("--mode shapes the sql format only", "Pass --format=sql, or load the dump with smig insert --mode=<mode>.")
+		}
 		cfg := config.FromEnv()
 		cfg.StepsFile = stepsFile
 		cfg.DBDir = dbDir
@@ -60,9 +87,13 @@ tables with the arrow keys and space, then asks for the output path.`,
 			return nil
 		}
 
-		log.Header(fmt.Sprintf("dump %d table(s) to %s", len(selected), out))
+		header := fmt.Sprintf("dump %d table(s) to %s as %s", len(selected), out, dumpFormat)
+		if dumpFormat == data.FormatSQL {
+			header += ", mode " + dumpMode
+		}
+		log.Header(header)
 		for _, t := range selected {
-			count, path, err := data.DumpTable(ctx, d, t, out)
+			count, path, err := data.DumpTable(ctx, d, t, out, data.Options{Format: dumpFormat, Mode: dumpMode, UpdatedAt: dumpUpdatedAt})
 			if err != nil {
 				return fmt.Errorf("dump %s: %w", t.Qualified(), err)
 			}
@@ -70,6 +101,15 @@ tables with the arrow keys and space, then asks for the output path.`,
 		}
 		return nil
 	},
+}
+
+func validFormat(format string) bool {
+	for _, f := range data.Formats {
+		if f == format {
+			return true
+		}
+	}
+	return false
 }
 
 func selectDumpTargets(available []data.Table) ([]data.Table, string, error) {
@@ -244,7 +284,10 @@ var dumpOutChanged bool
 func init() {
 	dumpCmd.Flags().BoolVar(&dumpAll, "all", false, "Dump every table in the declared schemas")
 	dumpCmd.Flags().StringSliceVar(&dumpTables, "table", nil, "Table to dump as schema.table, repeatable and comma joined")
-	dumpCmd.Flags().StringVar(&dumpOut, "out", ".", "Directory to write the json files into")
+	dumpCmd.Flags().StringVar(&dumpOut, "out", ".", "Directory to write the files into")
+	dumpCmd.Flags().StringVar(&dumpFormat, "format", data.FormatJSON, "File format: "+strings.Join(data.Formats, ", "))
+	dumpCmd.Flags().StringVar(&dumpMode, "mode", data.ModeInsert, "Statement shape of the sql format: "+strings.Join(data.Modes, ", "))
+	dumpCmd.Flags().StringVar(&dumpUpdatedAt, "updated-at", "", "The update time column the sql of mode latest compares, default sa_updated_at, else updated_at")
 	dumpCmd.PreRun = func(cmd *cobra.Command, args []string) {
 		dumpOutChanged = cmd.Flags().Changed("out")
 	}

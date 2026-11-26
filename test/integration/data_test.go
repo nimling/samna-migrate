@@ -36,7 +36,7 @@ func TestDumpInsertRoundtrip(t *testing.T) {
 
 	tbl := data.Table{Schema: "public", Name: "smig_roundtrip"}
 	dir := t.TempDir()
-	count, path, err := data.DumpTable(ctx, d, tbl, dir)
+	count, path, err := data.DumpTable(ctx, d, tbl, dir, data.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,12 @@ func TestDumpInsertRoundtrip(t *testing.T) {
 	if _, err := d.Pool.Exec(ctx, `TRUNCATE public.smig_roundtrip`); err != nil {
 		t.Fatal(err)
 	}
-	rows, err := data.InsertFile(ctx, d, tbl, path, false)
+	r, err := data.InsertFile(ctx, d, tbl, path, data.Options{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rows != 2 {
-		t.Fatalf("inserted rows = %d, want 2", rows)
+	if r.Inserted != 2 {
+		t.Fatalf("inserted rows = %d, want 2", r.Inserted)
 	}
 
 	var n int
@@ -108,16 +108,16 @@ func TestInsertNoTriggersBypassesTrigger(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := data.InsertFile(ctx, d, data.Table{Schema: "public", Name: "smig_guard"}, path, false); err == nil {
+	if _, err := data.InsertFile(ctx, d, data.Table{Schema: "public", Name: "smig_guard"}, path, data.Options{}); err == nil {
 		t.Fatal("insert with triggers enabled should have been blocked")
 	}
 
-	rows, err := data.InsertFile(ctx, d, data.Table{Schema: "public", Name: "smig_guard"}, path, true)
+	r, err := data.InsertFile(ctx, d, data.Table{Schema: "public", Name: "smig_guard"}, path, data.Options{NoTriggers: true})
 	if err != nil {
 		t.Fatalf("insert with --no-triggers failed: %v", err)
 	}
-	if rows != 2 {
-		t.Fatalf("inserted rows = %d, want 2", rows)
+	if r.Inserted != 2 {
+		t.Fatalf("inserted rows = %d, want 2", r.Inserted)
 	}
 
 	var n int

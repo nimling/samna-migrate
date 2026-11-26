@@ -26,8 +26,8 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 | `merge` | with `--apply` | Fold live SQL into a staging tree and optionally promote it. |
 | `rebase` | ledger only | Mirror on disk content into the ledger as the deployed truth. `--prune=<step slug or type>` mirrors the applied rows of that step: folds the ones whose file left the tree, pending ones too, and records the ones on disk at the file's content; bare `--prune` is every step. |
 | `down` | yes | AI assisted revert of applied migrations. |
-| `dump` | no | Dump table data to json, one `<schema>.<table>.json` per table. |
-| `insert` | yes | Insert rows from `<schema>.<table>.json` files back into their tables. |
+| `dump` | no | Dump table data to json, jsonl, csv or sql, one `<schema>.<table>.<format>` per table. |
+| `insert` | yes | Load `<schema>.<table>` json, jsonl, csv or sql files into their tables; `--mode` inserts, updates or skips by primary key and `--plan` shows what would change. |
 | `destroy` | yes | Drop every object the tree creates and reset the ledger. Needs docker. |
 | `test` | no | Run the pgTAP tests on a throwaway postgres built from the tree; `--from=<ref>` also upgrades from that ref. Needs docker. |
 | `config` | no | Print, set, switch and initialise the named and local configs. |
@@ -46,9 +46,9 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 
 ## Data and teardown
 
-`dump` writes the rows of each selected table to `<schema>.<table>.json` in the output directory, limited to the base tables in the schemas declared by `migrate.yml`. `--all` dumps every such table, `--table=<schema.table>` a subset, `--out=<dir>` sets the destination. With no selection flag and a terminal it opens an arrow key list. Postgres encodes each file with `jsonb_agg(to_jsonb(...))`, so uuid, numeric, jsonb, and timestamptz round trip exactly.
+`dump` writes the rows of each selected table to `<schema>.<table>.<format>` in the output directory, limited to the base tables in the schemas declared by `migrate.yml`. `--all` dumps every such table, `--table=<schema.table>` a subset, `--out=<dir>` sets the destination. With no selection flag and a terminal it opens an arrow key list. `--format` picks the file: `json`, the default, one array encoded by `jsonb_agg(to_jsonb(...))`; `jsonl`, one object per line; `csv`, `COPY ... (FORMAT csv, HEADER)`; `sql`, `INSERT` statements of up to 1000 rows with every value quoted and cast to its column type. uuid, numeric, jsonb, bytea and timestamptz round trip exactly in all four. `--mode` shapes the sql: `upsert` and `merge` write `ON CONFLICT (<primary key>) DO UPDATE` of every other column where the row differs, `skip` `DO NOTHING`, `latest` an update only where the dumped update time is later, `replace` the upserts then a `DELETE` of every row the dump lacks; `create` has no sql form.
 
-`insert` loads those files back. Point it at a folder or individual files; the target table is read from each file name and rows load through `jsonb_populate_recordset` so every column is typed from the table itself. `--no-triggers` disables user triggers on the table for the load.
+`insert` loads those files back. Point it at a folder, which loads every `.json`, `.jsonl`, `.ndjson`, `.csv` and `.sql` inside in one run, or at individual files; the target table is read from each file name and every file is checked before the first loads. Rows stream into a temporary stage in batches, typed from the table, and reach it in one statement per step, one transaction per file; a `.sql` file runs its own statements in that transaction. `--mode` decides what a row whose primary key exists does, the key read from the catalog: `insert`, the default, refuses the file; `create` loads only rows that are new or the same; `upsert` updates every column the file carries; `merge` only the columns each row carries, so `sa_owner_id`, `sa_created_by` and the rest stay unless the file holds them; `skip` leaves it; `latest` updates it only when its `sa_updated_at`, `updated_at` or `--updated-at=<column>` is later; `replace` upserts, then deletes every row of the table the file lacks. Every mode but `insert` needs a primary key, and a row already held as it is is never written. `--plan` prints per file what would be inserted, updated, skipped, deleted and refused, and for a `.sql` file the statements and tables they touch, writing nothing; `--json` prints it as json. An error names the file, the line and the key. `--no-triggers` disables user triggers on the table for the load.
 
 `destroy` tears a database down to nothing the tree defines. It builds the tree into a throwaway Postgres, inventories exactly the objects those files produce, and drops that set from the live server: declared schemas other than `public` with `DROP SCHEMA CASCADE`, objects in `public` one by one with `DROP ... IF EXISTS CASCADE`. It then resets `samna_migrate.file` so a following `up` re-applies from scratch. The plan is printed and the database name is required to confirm; `--dry-run` prints the plan and drops nothing.
 
@@ -56,6 +56,7 @@ Samna Migrate is the migration runner for every Go service in the Samna stack. I
 smig dump --all --out=./snapshot --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
 smig destroy --dry-run --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
 smig insert ./snapshot --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
+smig insert ./snapshot --mode=merge --plan --env=.env.prd --schema=./database/migrate.yml --db-dir=./database
 ```
 
 ## Reconciling a history squash

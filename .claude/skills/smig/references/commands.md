@@ -92,15 +92,40 @@ Requires `--anthropic-key` or `ANTHROPIC_API_KEY`. `--to <file_path|history_id>`
 
 ## dump
 
-Reads a live database and writes json to disk, one `<schema>.<table>.json` per table, limited to base tables in the schemas declared by `migrate.yml`. `--all` selects every such table, `--table=<schema.table>` is repeatable and comma joined, `--out=<dir>` sets the destination.
+Reads a live database and writes to disk, one `<schema>.<table>.<format>` per table, limited to base tables in the schemas declared by `migrate.yml`. `--all` selects every such table, `--table=<schema.table>` is repeatable and comma joined, `--out=<dir>` sets the destination.
 
-With no selection flag and a terminal, an arrow key list lets the operator pick tables with space, `a` toggles all, enter confirms, then it asks for the output path. Rows encode through `jsonb_agg(to_jsonb(...))` so postgres owns type fidelity for uuid, numeric, jsonb, and timestamptz.
+With no selection flag and a terminal, an arrow key list lets the operator pick tables with space, `a` toggles all, enter confirms, then it asks for the output path.
+
+`--format` picks the file, rows ordered the same way in each:
+
+1. `json`, the default: one pretty printed array through `jsonb_agg(to_jsonb(...))`.
+2. `jsonl`: one `to_jsonb` object per line, streamed.
+3. `csv`: `COPY ... TO STDOUT (FORMAT csv, HEADER)`, a header of column names, an unquoted empty field for null.
+4. `sql`: `INSERT INTO <table> AS t (...) VALUES` of up to 1000 rows, every value `quote_nullable(...)` and cast to its column type, generated columns left out.
+
+`--mode` shapes the `sql` format only and is refused with any other: `insert` plain inserts; `upsert` and `merge` `ON CONFLICT (<primary key>) DO UPDATE SET` every other column `WHERE` the row differs; `skip` `DO NOTHING`; `latest` the update only where `excluded.<update time>` is later, the column `sa_updated_at`, `updated_at` or `--updated-at=<column>`; `replace` the upserts then one `DELETE ... WHERE NOT EXISTS` over the dumped keys. `create` is refused: a statement cannot refuse a row that differs. Every mode but `insert` needs a primary key.
 
 ## insert
 
-Loads json produced by `dump` back into its tables. Point it at a folder, which loads every `.json` inside, or at individual files from positional arguments and repeated `--path` flags. With none, the current directory is used.
+Loads files produced by `dump` back into their tables. Point it at a folder, which loads every `.json`, `.jsonl`, `.ndjson`, `.csv` and `.sql` inside in one run, or at individual files from positional arguments and repeated `--path` flags. With none, the current directory is used. Every file name and table is checked before the first file loads.
 
-The target table comes from each file name. Rows load through `jsonb_populate_recordset` so columns are typed from the table, generated columns excluded, one transaction per file. `--no-triggers` disables user triggers for the load and re enables them after.
+The target table comes from each file name, the format from its extension; a `.json` file holding one object per line reads as `jsonl`. Rows stream in batches of 1000 into a temporary stage typed from the table (`jsonb_populate_record`, or `COPY` for csv), generated columns excluded, then reach the table in one statement per step, one transaction per file. A `.sql` file runs its statements one by one in its transaction, and `--mode` does not apply to it.
+
+`--mode` decides what a row whose primary key exists does; the key is read from `pg_index`, never assumed:
+
+1. `insert`, the default: every row is inserted with every column, a missing key as null, as before; a row that exists refuses the file.
+2. `create`: new rows inserted, a row that exists and is the same skipped, one that differs refuses the file.
+3. `upsert`: new rows inserted, a row that exists updated in every column the file carries, a row the same skipped.
+4. `merge`: as `upsert`, each row updating only the columns its own object carries, so `sa_owner_id`, `sa_created_by` and the other `sa_*` columns stay unless the file holds them.
+5. `skip`: new rows inserted, a row that exists left as it is.
+6. `latest`: as `upsert`, a row updated only when the file's update time is later than the stored one; `sa_updated_at`, else `updated_at`, or `--updated-at=<column>`.
+7. `replace`: as `upsert`, then every row of the table the file lacks is deleted; a file with no rows deletes nothing, and two files for one table are refused.
+
+Every mode but `insert` refuses a table with no primary key. A row the table already holds as it is is never written, so its triggers do not fire. A row with no key, two rows with one key, or a value the column type refuses fails the file naming the line and the key; a refusal exits 3.
+
+`--plan` loads the stage, prints per file how many rows would be inserted, updated, skipped, deleted and refused, rolls back and writes nothing to the table; for a `.sql` file it prints the statements and the tables they touch. `--json` prints the results as a json array for a plan and a run alike. Plan first against a deployed database. `--no-triggers` disables user triggers for the load and re enables them after.
+
+nimbody's `sync` is left out: it needs a target filter to scope what it deletes, and over one table without one it is `replace`.
 
 ## destroy
 

@@ -19,6 +19,10 @@ func TestTableFromFile(t *testing.T) {
 		{"claimius.samna_user.json", "claimius", "samna_user", true},
 		{"/tmp/notjson.txt", "", "", false},
 		{"/tmp/noschema.json", "", "", false},
+		{"/tmp/public.bookable.jsonl", "public", "bookable", true},
+		{"/tmp/public.bookable.ndjson", "public", "bookable", true},
+		{"/tmp/public.bookable.csv", "public", "bookable", true},
+		{"/tmp/claimius.samna_user.sql", "claimius", "samna_user", true},
 	}
 	for _, c := range cases {
 		tbl, ok := tableFromFile(c.path)
@@ -28,9 +32,9 @@ func TestTableFromFile(t *testing.T) {
 	}
 }
 
-func TestCollectJSON(t *testing.T) {
+func TestCollectFiles(t *testing.T) {
 	dir := t.TempDir()
-	for _, n := range []string{"public.a.json", "public.b.json", "notes.txt"} {
+	for _, n := range []string{"public.a.json", "public.b.json", "public.c.jsonl", "public.d.ndjson", "public.e.csv", "notes.txt", ".hidden.json"} {
 		if err := os.WriteFile(filepath.Join(dir, n), []byte("[]"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -39,21 +43,21 @@ func TestCollectJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	files, err := collectJSON([]string{dir})
+	files, err := collectFiles([]string{dir})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(files) != 2 {
-		t.Fatalf("collectJSON dir = %v, want 2 json files", files)
+	if len(files) != 5 {
+		t.Fatalf("collectFiles dir = %v, want 5 data files", files)
 	}
 
 	single := filepath.Join(dir, "public.a.json")
-	files, err = collectJSON([]string{single, single})
+	files, err = collectFiles([]string{single, single})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(files) != 1 {
-		t.Errorf("collectJSON dedup = %v, want 1", files)
+		t.Errorf("collectFiles dedup = %v, want 1", files)
 	}
 }
 
